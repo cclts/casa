@@ -3,33 +3,34 @@ set -e
 
 echo "[+] Installing dependencies..."
 
-# 基本工具
 sudo apt update
 sudo apt install -y \
     build-essential \
     clang \
     llvm \
     libelf-dev \
-    gcc-multilib \
     make \
     git \
     pkg-config
 
-# Go 安裝（如果沒有）
-if ! command -v go &> /dev/null; then
-    echo "[+] Installing Go..."
-    wget https://go.dev/dl/go1.22.3.linux-amd64.tar.gz
-    sudo rm -rf /usr/local/go
-    sudo tar -C /usr/local -xzf go1.22.3.linux-amd64.tar.gz
+# install go
+ARCH=$(uname -m)
 
-    echo "export PATH=$PATH:/usr/local/go/bin" >> ~/.bashrc
-    export PATH=$PATH:/usr/local/go/bin
+if [ "$ARCH" = "x86_64" ]; then
+    GO_ARCH="amd64"
+elif [ "$ARCH" = "aarch64" ]; then
+    GO_ARCH="arm64"
+else
+    echo "Unsupported architecture: $ARCH"
+    exit 1
 fi
+
+wget https://go.dev/dl/go1.22.5.linux-${GO_ARCH}.tar.gz
 
 # cilium/ebpf dependency
 echo "[+] Setting up Go modules..."
 cd user
-go mod init openclaw
+go mod init github.com/cclts/care-go
 go get github.com/cilium/ebpf
 go get github.com/cilium/ebpf/link
 go get golang.org/x/sys

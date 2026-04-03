@@ -8,6 +8,32 @@
 *.so
 *.dylib
 
+# eBPF build artifacts
+*.o
+*.a
+*.so
+*.skel.h
+.output/
+bpftool/
+libbpf/
+
+# binaries
+minimal
+bootstrap
+kprobe
+uprobe
+tc
+lsm
+
+# system
+.DS_Store
+
+# logs
+*.log
+
+# temp
+tmp/
+
 # Test binary, built with `go test -c`
 *.test
 
@@ -29,4 +55,4 @@ go.work.sum
 
 # Editor/IDE
 # .idea/
-# .vscode/
+.vscode/
