@@ -2,8 +2,8 @@ package main
 
 import (
     "log"
-    "openclaw/internal/ebpf"
-    "openclaw/internal/pipeline"
+    "github.com/cclts/care-go/user/internal/ebpf"
+    "github.com/cclts/care-go/user/internal/pipeline"
 )
 
 func main() {
@@ -15,13 +15,20 @@ func main() {
     defer objs.Close()
 
     // Attach probes
-    err = ebpf.Attach(objs)
+    l, err := ebpf.Attach(objs)
     if err != nil {
         log.Fatalf("attach failed: %v", err)
     }
+    defer l.Close()
 
-    log.Println("[+] eBPF attached")
+    events := make(chan ebpf.Event, 1000)
 
-    // Start pipeline
-    pipeline.Run(objs.Events)
+	err = ebpf.ReadEvents(objs.Events, events)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	log.Println("[+] listening for execve...")
+
+	pipeline.Run(events)
 }

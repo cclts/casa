@@ -12,10 +12,12 @@
 *.o
 *.a
 *.so
+*.bpf.o
 *.skel.h
 .output/
 bpftool/
 libbpf/
+ebpf/build/
 
 # binaries
 minimal
@@ -36,6 +38,13 @@ tmp/
 
 # Test binary, built with `go test -c`
 *.test
+
+# Debug symbols
+*.debug
+
+# Linux perf / trace artifacts
+perf.data
+perf.data.old
 
 # Code coverage profiles and other test artifacts
 *.out
