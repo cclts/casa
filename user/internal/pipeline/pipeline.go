@@ -14,13 +14,3 @@ func Run(events <- chan ebpf.Event) {
             e.Pid, comm, filename)
 	}
 }
-
-func bytesToString(b []byte) string {
-	n := 0
-	for ; n < len(b); n++ {
-		if b[n] == 0 {
-			break
-		}
-	}
-	return string(b[:n])
-}

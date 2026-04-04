@@ -1,8 +1,12 @@
-1. run
+1. build
 ```
-./scripts/run.sh
+make
 ```
-2. show dir
+2. run
+```
+make run
+```
+3. show dir
 ```
 tree -I "*.o|*.mod|*.sum"
 ```

@@ -11,6 +11,8 @@ VMLINUX_H := $(EBPF_HEADERS_DIR)/vmlinux.h
 C_SOURCES := $(wildcard $(EBPF_PROBES_DIR)/*.c)
 BPF_OBJECTS := $(patsubst $(EBPF_PROBES_DIR)/%.c,$(EBPF_BUILD_DIR)/%.o,$(C_SOURCES))
 
+BPF_FINAL := $(EBPF_BUILD_DIR)/probes.o
+
 BPF_CFLAGS := -O2 -g -target bpf -D__TARGET_ARCH_$(ARCH) -I$(EBPF_HEADERS_DIR)
 
 .PHONY: all vmlinux ebpf build run clean
@@ -24,12 +26,12 @@ $(VMLINUX_H):
 	@echo "Generating vmlinux.h..."
 	@$(BPFTOOL) btf dump file /sys/kernel/btf/vmlinux format c > $(VMLINUX_H)
 
-ebpf: $(BPF_OBJECTS)
+ebpf: $(BPF_FINAL)
 
-$(EBPF_BUILD_DIR)/%.o: $(EBPF_PROBES_DIR)/%.c $(VMLINUX_H)
+$(BPF_FINAL): $(EBPF_PROBES_DIR)/main.c $(VMLINUX_H)
 	@mkdir -p $(EBPF_BUILD_DIR)
-	@echo "Compiling BPF object: $<"
-	@$(CLANG) $(BPF_CFLAGS) -c $< -o $@
+	@echo "Compiling merged BPF object..."
+	$(CLANG) $(BPF_CFLAGS) -c $< -o $@
 
 build:
 	@echo "Building Go application..."
@@ -42,5 +44,3 @@ run: all
 clean:
 	@echo "Cleaning up..."
 	rm -rf $(EBPF_BUILD_DIR)
-	rm -f $(VMLINUX_H)
-	rm -f $(USER_DIR)/app

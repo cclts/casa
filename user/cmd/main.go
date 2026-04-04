@@ -2,33 +2,48 @@ package main
 
 import (
     "log"
+    "bytes"
+    "strings"
     "github.com/cclts/care-go/user/internal/ebpf"
     "github.com/cclts/care-go/user/internal/pipeline"
 )
 
 func main() {
-    // Load eBPF programs
-    objs, err := ebpf.Load()
-    if err != nil {
-        log.Fatalf("failed to load ebpf: %v", err)
-    }
-    defer objs.Close()
-
-    // Attach probes
-    l, err := ebpf.Attach(objs)
-    if err != nil {
-        log.Fatalf("attach failed: %v", err)
-    }
-    defer l.Close()
-
-    events := make(chan ebpf.Event, 1000)
-
-	err = ebpf.ReadEvents(objs.Events, events)
+    loader, err := ebpf.Load("ebpf/build/probes.o")
 	if err != nil {
 		log.Fatal(err)
 	}
+	defer loader.Close()
 
-	log.Println("[+] listening for execve...")
+	if err := loader.Attach(); err != nil {
+		log.Fatal(err)
+	}
 
-	pipeline.Run(events)
+	rawEvents := make(chan ebpf.Event, 500)
+	filtered := make(chan ebpf.Event, 500)
+
+	// read from kernel
+	go func() {
+        defer close(rawEvents)
+		if err := loader.ReadEvents(rawEvents); err != nil {
+			log.Println("reader stopped:", err)
+		}
+	}()
+
+	// filter
+	go func() {
+		defer close(filtered)
+
+		for e := range rawEvents {
+			comm := string(bytes.TrimRight(e.Comm[:], "\x00"))
+
+			if strings.Contains(comm, "cpuUsage.sh") {
+				continue
+			}
+
+			filtered <- e
+		}
+	}()
+
+	pipeline.Run(filtered)
 }

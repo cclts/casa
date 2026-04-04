@@ -1,77 +1,104 @@
 package ebpf
 
 import (
-	"encoding/binary"
-	"fmt"
 	"bytes"
+	"fmt"
+	"encoding/binary"
 
 	"github.com/cilium/ebpf"
 	"github.com/cilium/ebpf/link"
 	"github.com/cilium/ebpf/ringbuf"
 )
 
-type Objects struct {
-	Events *ebpf.Map
-	Prog   *ebpf.Program
+type bpfObjects struct {
+    Events   *ebpf.Map `ebpf:"events"`
+    ExecveProg *ebpf.Program `ebpf:"handle_execve"`
+    OpenatProg *ebpf.Program `ebpf:"handle_openat"`
 }
 
-func Load() (*Objects, error) {
-	spec, err := ebpf.LoadCollectionSpec("ebpf/build/execve.o")
+type Loader struct {
+	objs  bpfObjects
+	rd    *ringbuf.Reader
+	links []link.Link
+}
+
+func Load(path string) (*Loader, error) {
+	spec, err := ebpf.LoadCollectionSpec(path)
 	if err != nil {
 		return nil, err
 	}
 
-	objs := &Objects{}
-	coll, err := ebpf.NewCollection(spec)
+	var objs bpfObjects
+	if err := spec.LoadAndAssign(&objs, nil); err != nil {
+		return nil, err
+	}
+
+	rd, err := ringbuf.NewReader(objs.Events)
 	if err != nil {
 		return nil, err
 	}
 
-	objs.Events = coll.Maps["events"]
-	objs.Prog = coll.Programs["handle_execve"]
-
-	return objs, nil
+	return &Loader{
+		objs: objs,
+		rd:   rd,
+	}, nil
 }
 
-func Attach(objs *Objects) (link.Link, error) {
-	return link.Tracepoint("syscalls", "sys_enter_execve", objs.Prog, nil)
-}
-
-func ReadEvents(events *ebpf.Map, out chan Event) error {
-	rd, err := ringbuf.NewReader(events)
-	if err != nil {
-		return err
-	}
-
-	go func() {
-		defer rd.Close()
-
-		for {
-			record, err := rd.Read()
-			if err != nil {
-				fmt.Println("read error:", err)
-				return
-			}
-
-			var e Event
-			if err := binary.Read(bytes.NewBuffer(record.RawSample), binary.LittleEndian, &e); err != nil {
-				fmt.Println("decode error:", err)
-				continue
-			}
-
-			out <- e
-		}
-	}()
-
-	return nil
-}
-
-func (o *Objects) Close() error {
-    if o.Events != nil {
-        o.Events.Close()
+func (l *Loader) Attach() error {
+    progs := []struct {
+        name string
+        hook string
+        p    *ebpf.Program
+    }{
+        {"syscalls", "sys_enter_execve", l.objs.ExecveProg},
+        {"syscalls", "sys_enter_openat", l.objs.OpenatProg},
     }
-    if o.Prog != nil {
-        o.Prog.Close()
+
+    for _, tp := range progs {
+        if tp.p == nil {
+            return fmt.Errorf("program %s not found", tp.hook)
+        }
+        lnk, err := link.Tracepoint(tp.name, tp.hook, tp.p, nil)
+        if err != nil {
+            return fmt.Errorf("failed to attach %s: %w", tp.hook, err)
+        }
+        l.links = append(l.links, lnk)
     }
     return nil
+}
+
+func (l *Loader) ReadEvents(out chan<- Event) error {
+	for {
+		record, err := l.rd.Read()
+		if err != nil {
+			return err
+		}
+
+		var e Event
+		if err := binary.Read(bytes.NewBuffer(record.RawSample), binary.LittleEndian, &e); err != nil {
+			continue
+		}
+
+		out <- e
+	}
+}
+
+func (l *Loader) Close() {
+	for _, link := range l.links {
+		if link != nil {
+            link.Close()
+        }
+	}
+	if l.rd != nil {
+        l.rd.Close()
+    }
+	if l.objs.Events != nil {
+        l.objs.Events.Close()
+    }
+    if l.objs.ExecveProg != nil {
+        l.objs.ExecveProg.Close()
+    }
+    if l.objs.OpenatProg != nil {
+        l.objs.OpenatProg.Close()
+    }
 }
