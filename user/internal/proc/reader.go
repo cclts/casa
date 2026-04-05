@@ -3,7 +3,6 @@ package proc
 import (
     "fmt"
     "os"
-    "path/filepath"
     "strconv"
 )
 
@@ -49,4 +48,12 @@ func ListPIDs() ([]int, error) {
         }
     }
     return pids, nil
+}
+
+func ReadExe(pid int) (string, error) {
+    path, err := os.Readlink(fmt.Sprintf("/proc/%d/exe", pid))
+    if err != nil {
+        return "", err
+    }
+    return path, nil
 }
