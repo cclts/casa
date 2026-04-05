@@ -10,6 +10,13 @@ int handle_openat(struct trace_event_raw_sys_enter *ctx) {
 
     e->pid = bpf_get_current_pid_tgid() >> 32;
     e->type = EVENT_OPENAT;
+    u64 uid_gid = bpf_get_current_uid_gid();
+    e->uid = uid_gid & 0xffffffff;
+
+    struct task_struct *task = (struct task_struct *)bpf_get_current_task();
+    struct task_struct *parent;
+    bpf_probe_read_kernel(&parent, sizeof(parent), &task->real_parent);
+    bpf_probe_read_kernel(&e->ppid, sizeof(e->ppid), &parent->tgid);
 
     bpf_get_current_comm(&e->comm, sizeof(e->comm));
 
