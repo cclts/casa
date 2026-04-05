@@ -14,6 +14,7 @@ type bpfObjects struct {
     Events   *ebpf.Map `ebpf:"events"`
     ExecveProg *ebpf.Program `ebpf:"handle_execve"`
     OpenatProg *ebpf.Program `ebpf:"handle_openat"`
+	ConnectProg *ebpf.Program `ebpf:"handle_connect"`
 }
 
 type Loader struct {
@@ -52,6 +53,7 @@ func (l *Loader) Attach() error {
     }{
         {"syscalls", "sys_enter_execve", l.objs.ExecveProg},
         {"syscalls", "sys_enter_openat", l.objs.OpenatProg},
+		{"syscalls", "sys_enter_connect", l.objs.ConnectProg},
     }
 
     for _, tp := range progs {
@@ -100,5 +102,8 @@ func (l *Loader) Close() {
     }
     if l.objs.OpenatProg != nil {
         l.objs.OpenatProg.Close()
+    }
+	if l.objs.ConnectProg != nil {
+        l.objs.ConnectProg.Close()
     }
 }

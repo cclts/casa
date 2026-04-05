@@ -5,4 +5,7 @@ type Event struct {
 	Type     uint32
 	Comm     [16]byte
 	Filename [256]byte
+	Daddr    uint32
+    Dport    uint16
+	_        [2]byte
 }

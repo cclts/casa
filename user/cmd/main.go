@@ -3,10 +3,14 @@ package main
 import (
     "log"
     "bytes"
-    "strings"
     "github.com/cclts/care-go/user/internal/ebpf"
     "github.com/cclts/care-go/user/internal/pipeline"
 )
+
+var blackList = map[string]bool{
+    "cpuUsage.sh": true,
+    "ps":           true,
+}
 
 func main() {
     loader, err := ebpf.Load("ebpf/build/probes.o")
@@ -37,9 +41,9 @@ func main() {
 		for e := range rawEvents {
 			comm := string(bytes.TrimRight(e.Comm[:], "\x00"))
 
-			if strings.Contains(comm, "cpuUsage.sh") {
-				continue
-			}
+			if blackList[comm] {
+                continue
+            }
 
 			filtered <- e
 		}

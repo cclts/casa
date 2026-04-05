@@ -11,3 +11,4 @@ struct {
 
 #include "execve.c"
 #include "openat.c"
+#include "connect.c"
