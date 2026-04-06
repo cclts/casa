@@ -33,12 +33,23 @@ func Run(events <-chan event.Event) {
 
 		log.Printf("[%s] (PID: %d, Depth: %d)", e.Type, e.PID, lineage.Depth)
 
-		cmd := e.Path
-		if len(e.Args) > 0 {
-			cmd = strings.Join(e.Args, " ")
-		}
-		log.Printf("  ➤ Command: %s", cmd)
+		switch e.Type {
+		case 0:
+			fullArgs := ""
+			if len(e.Args) > 0 {
+				fullArgs = strings.Join(e.Args, " ")
+			}
 
+			log.Printf("  ➤ Exec: %s", e.Path)
+			if fullArgs != "" {
+				log.Printf("  ➤ Args: %s", fullArgs)
+			}
+
+		case 1:
+			log.Printf("  ➤ Open: %s", e.Path)
+		case 2:
+			log.Printf("  ➤ Connect: %s:%d", e.Addr, e.Port)
+		}
 		for i, n := range lineage.Nodes {
 			prefix := "  ↳"
 			if i == 0 {
