@@ -1,10 +1,10 @@
 package pipeline
 
 import (
-	// "fmt"
 	// "net"
 	// "bytes"
 	"log"
+	"strings"
 
 	"github.com/cclts/care-go/user/internal/event"
 	"github.com/cclts/care-go/user/internal/process"
@@ -31,10 +31,21 @@ func Run(events <-chan event.Event) {
 
 		lineage := process.BuildLineage(int(e.PID), tracker)
 
-		log.Printf("[TRACE] pid=%d depth=%d\n", e.PID, lineage.Depth)
+		log.Printf("[%s] (PID: %d, Depth: %d)", e.Type, e.PID, lineage.Depth)
 
-		for _, n := range lineage.Nodes {
-			log.Printf("  ↳ %d (%s)", n.PID, n.Comm)
+		cmd := e.Path
+		if len(e.Args) > 0 {
+			cmd = strings.Join(e.Args, " ")
+		}
+		log.Printf("  ➤ Command: %s", cmd)
+
+		for i, n := range lineage.Nodes {
+			prefix := "  ↳"
+			if i == 0 {
+				prefix = "  [Target]"
+			}
+			indent := strings.Repeat("    ", i)
+			log.Printf("%s%s %d (%s)", indent, prefix, n.PID, n.Comm)
 		}
 	}
 }

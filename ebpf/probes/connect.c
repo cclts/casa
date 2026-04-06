@@ -11,7 +11,10 @@ int handle_connect(struct trace_event_raw_sys_enter *ctx) {
     if (!e)
         return 0;
 
+    __builtin_memset(e, 0, sizeof(*e)); 
+
     e->type = EVENT_CONNECT;
+    
     u64 pid_tgid = bpf_get_current_pid_tgid();
     e->tgid = pid_tgid >> 32;
     e->pid = pid_tgid & 0xffffffff;

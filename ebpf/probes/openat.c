@@ -7,7 +7,9 @@ int handle_openat(struct trace_event_raw_sys_enter *ctx) {
     e = bpf_ringbuf_reserve(&events, sizeof(*e), 0);
     if (!e)
         return 0;
-
+    
+    __builtin_memset(e, 0, sizeof(*e)); 
+    
     e->type = EVENT_OPENAT;
     u64 pid_tgid = bpf_get_current_pid_tgid();
     e->tgid = pid_tgid >> 32;

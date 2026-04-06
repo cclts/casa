@@ -6,9 +6,10 @@ type Event struct {
 	Ppid     uint32
 	Uid      uint32
 	Type     uint32
+	Argc     uint32
 	Comm     [16]byte
-	Filename [256]byte
+	Filename [128]byte
+	Args     [5][64]byte
 	Daddr    uint32
-    Dport    uint16
-	_        [2]byte
+	Dport    uint16
 }
