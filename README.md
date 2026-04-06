@@ -4,7 +4,7 @@ make
 ```
 2. run
 ```
-make run
+make run 2>&1 | stdbuf -oL tee trace.log
 ```
 3. show dir
 ```

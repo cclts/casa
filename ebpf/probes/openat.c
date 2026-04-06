@@ -8,8 +8,10 @@ int handle_openat(struct trace_event_raw_sys_enter *ctx) {
     if (!e)
         return 0;
 
-    e->pid = bpf_get_current_pid_tgid() >> 32;
     e->type = EVENT_OPENAT;
+    u64 pid_tgid = bpf_get_current_pid_tgid();
+    e->tgid = pid_tgid >> 32;
+    e->pid = pid_tgid & 0xffffffff;
     u64 uid_gid = bpf_get_current_uid_gid();
     e->uid = uid_gid & 0xffffffff;
 

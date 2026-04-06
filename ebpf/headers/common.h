@@ -9,6 +9,7 @@
 #define EVENT_CONNECT 2
 
 struct event {
+    __u32 tgid;
     __u32 pid;
     __u32 ppid;
     __u32 uid;

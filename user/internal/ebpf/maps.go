@@ -1,8 +1,9 @@
 package ebpf
 
 type Event struct {
+	Tgid     uint32
 	Pid      uint32
-	Ppid      uint32
+	Ppid     uint32
 	Uid      uint32
 	Type     uint32
 	Comm     [16]byte

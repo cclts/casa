@@ -1,9 +1,11 @@
 package proc
 
 import (
+    "bytes"
     "fmt"
     "os"
     "strconv"
+    "strings"
 )
 
 func ReadComm(pid int) (string, error) {
@@ -11,7 +13,8 @@ func ReadComm(pid int) (string, error) {
     if err != nil {
         return "", err
     }
-    return string(data[:len(data)-1]), nil // remove \n
+
+    return strings.TrimSpace(string(data)), nil
 }
 
 func ReadPPID(pid int) (int, error) {
@@ -20,14 +23,25 @@ func ReadPPID(pid int) (int, error) {
         return 0, err
     }
 
-    var (
-        pidVal int
-        comm   string
-        state  string
-        ppid   int
-    )
+    end := bytes.LastIndexByte(data, ')')
+    if end == -1 {
+        return 0, fmt.Errorf("invalid stat format")
+    }
 
-    fmt.Sscanf(string(data), "%d %s %s %d", &pidVal, &comm, &state, &ppid)
+    rest := string(data[end+2:]) // skip ") "
+
+    fields := strings.Fields(rest)
+    if len(fields) < 2 {
+        return 0, fmt.Errorf("stat fields too short")
+    }
+
+    // fields[0] = state
+    // fields[1] = ppid
+    ppid, err := strconv.Atoi(fields[1])
+    if err != nil {
+        return 0, err
+    }
+
     return ppid, nil
 }
 

@@ -18,7 +18,8 @@ func ToEvent(e Event) event.Event {
 	port := (e.Dport << 8) | (e.Dport >> 8)
 
 	return event.Event{
-		PID:  e.Pid,
+		PID:  e.Tgid,
+		TID:  e.Pid,
 		PPID: e.Ppid,
         UID:  e.Uid,
 		

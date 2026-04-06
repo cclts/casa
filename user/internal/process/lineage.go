@@ -19,12 +19,29 @@ type Lineage struct {
 
 const MaxDepth = 4
 
-func BuildLineage(pid int) Lineage {
+func BuildLineage(pid int, tracker *Tracker) Lineage {
     var nodes []Node
-
     current := pid
 
     for i := 0; i < MaxDepth; i++ {
+		// use tracker first
+        if info, ok := tracker.GetInfo(uint32(current)); ok {
+            nodes = append(nodes, Node{
+                PID:  current,
+                PPID: int(info.PPID),
+                Comm: info.Comm,
+            })
+
+			if tracker.IsRoot(uint32(current)) {
+                break
+            }
+
+            current = int(info.PPID)
+
+            continue
+        }
+
+		// fallback to /proc
         comm, err := proc.ReadComm(current)
         if err != nil {
             break
@@ -35,18 +52,15 @@ func BuildLineage(pid int) Lineage {
             break
         }
 
-        path, _ := proc.ReadExe(current) // optional（下面補）
-
         nodes = append(nodes, Node{
             PID:  current,
             PPID: ppid,
             Comm: comm,
-            Path: path,
         })
 
-        if ppid <= 1 {
-            break
-        }
+        if tracker.IsRoot(uint32(current)) {
+			break
+		}
 
         current = ppid
     }

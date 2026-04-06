@@ -9,7 +9,8 @@ const (
 )
 
 type Event struct {
-    PID  uint32
+    PID  uint32 // This is TGID (Process ID)
+    TID  uint32 // This is PID (Thread ID)
     PPID uint32
     UID  uint32
 
