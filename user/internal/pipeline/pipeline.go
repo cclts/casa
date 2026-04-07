@@ -19,16 +19,20 @@ func Run(events <-chan event.Event) {
 
 	log.Println("bootstrap done")
 
+	// Process incoming events from the eBPF ring buffer.
 	for e := range events {
 
+		// On new process execution, propagate the tracking status from parent to child.
 		if e.Type == 0 { // EventExecve
 			tracker.Propagate(e.PID, e.PPID, e.Comm)
 		}
 
+		// Skip events if neither the process nor its parent is in our watchlist.
 		if !tracker.Exists(e.PID) && !tracker.Exists(e.PPID) {
 			continue
 		}
 
+		// Retrieve the full process lineage.
 		lineage := process.BuildLineage(int(e.PID), tracker)
 
 		log.Printf("[%s] (PID: %d, Depth: %d)", e.Type, e.PID, lineage.Depth)
