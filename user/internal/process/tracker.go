@@ -2,16 +2,12 @@ package process
 
 import (
 	"sync"
-	"time"
 )
-
-const ttl = 5 * time.Second
 
 // TrackedInfo caches process info to prevent race condition
 type TrackedInfo struct {
-	Comm      string
-	PPID      uint32
-	Timestamp time.Time
+	Comm string
+	PPID uint32
 }
 
 type Tracker struct {
@@ -44,9 +40,8 @@ func (t *Tracker) Add(pid uint32, ppid uint32, comm string) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	t.tracked[pid] = TrackedInfo{
-		Comm:      comm,
-		PPID:      ppid,
-		Timestamp: time.Now(),
+		Comm: comm,
+		PPID: ppid,
 	}
 }
 
@@ -57,22 +52,12 @@ func (t *Tracker) Exists(pid uint32) bool {
 	return ok
 }
 
-func (t *Tracker) IsFresh(pid uint32) bool {
-	t.mu.RLock()
-	defer t.mu.RUnlock()
-	info, ok := t.tracked[pid]
-	if !ok {
-		return false
-	}
-	return time.Since(info.Timestamp) <= ttl
-}
-
 func (t *Tracker) GetInfo(pid uint32) (TrackedInfo, bool) {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
 
 	info, ok := t.tracked[pid]
-	if !ok || time.Since(info.Timestamp) > ttl {
+	if !ok {
 		return TrackedInfo{}, false
 	}
 	return info, true

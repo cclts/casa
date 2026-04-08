@@ -15,8 +15,6 @@
 *.bpf.o
 *.skel.h
 .output/
-bpftool/
-libbpf/
 ebpf/build/
 
 # binaries

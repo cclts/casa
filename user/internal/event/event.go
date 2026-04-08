@@ -17,7 +17,7 @@ func (t EventType) String() string {
 	case EventConnect:
 		return "CONNECT"
 	default:
-		return "UNKNOWN"
+		return "OTHER"
 	}
 }
 

@@ -21,7 +21,7 @@ func Run(events <-chan event.Event) {
 
 	// Process incoming events from the eBPF ring buffer.
 	for e := range events {
-
+		// Tracking: Update the process lineage tree
 		// On new process execution, propagate the tracking status from parent to child.
 		if e.Type == 0 { // EventExecve
 			tracker.Propagate(e.PID, e.PPID, e.Comm)
