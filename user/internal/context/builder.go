@@ -30,7 +30,6 @@ func BuildContext(s *Session) Context {
 		ctx.Execution.DeepChain = true
 	}
 
-	// 掃整棵樹
 	nodes := collectNodes(s.Root)
 
 	for _, n := range nodes {
@@ -41,7 +40,6 @@ func BuildContext(s *Session) Context {
 		}
 	}
 
-	// graph pattern（不是 string）
 	if matchSuspiciousChain(s.Root) {
 		ctx.Execution.SuspiciousChain = true
 	}
