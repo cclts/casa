@@ -30,7 +30,7 @@ func BootstrapOpenClaw(tracker *Tracker) error {
 				continue
 			}
 
-			tracker.Add(uint32(pid), uint32(ppid), comm)
+			tracker.Add(uint32(pid), uint32(ppid), comm, 0)
 			tracker.AddRoot(uint32(pid))
 
 			found = true

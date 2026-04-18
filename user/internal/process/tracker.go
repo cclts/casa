@@ -6,8 +6,9 @@ import (
 
 // TrackedInfo caches process info to prevent race condition
 type TrackedInfo struct {
-	Comm string
-	PPID uint32
+	Comm  string
+	PPID  uint32
+	Depth int
 }
 
 type Tracker struct {
@@ -36,12 +37,13 @@ func (t *Tracker) AddRoot(pid uint32) {
 	t.roots[pid] = struct{}{}
 }
 
-func (t *Tracker) Add(pid uint32, ppid uint32, comm string) {
+func (t *Tracker) Add(pid uint32, ppid uint32, comm string, depth int) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	t.tracked[pid] = TrackedInfo{
-		Comm: comm,
-		PPID: ppid,
+		Comm:  comm,
+		PPID:  ppid,
+		Depth: depth,
 	}
 }
 
@@ -64,7 +66,14 @@ func (t *Tracker) GetInfo(pid uint32) (TrackedInfo, bool) {
 }
 
 func (t *Tracker) Propagate(pid uint32, ppid uint32, comm string) {
-	if t.Exists(ppid) {
-		t.Add(pid, ppid, comm)
+	parent, ok := t.tracked[ppid]
+	if !ok {
+		return
+	}
+
+	t.tracked[pid] = TrackedInfo{
+		Comm:  comm,
+		PPID:  ppid,
+		Depth: parent.Depth + 1,
 	}
 }

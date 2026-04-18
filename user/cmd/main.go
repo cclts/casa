@@ -23,8 +23,6 @@ func main() {
 
 	// 3. Setup raw event channel (direct from kernel)
 	rawEvents := make(chan ebpf.Event, 500)
-
-	// 4. Start kernel event reader
 	go func() {
 		defer close(rawEvents)
 		if err := loader.ReadEvents(rawEvents); err != nil {
@@ -32,7 +30,7 @@ func main() {
 		}
 	}()
 
-	// 5. Transform Stage: Convert ebpf.Event to event.Event
+	// 4. Transform Stage: Convert ebpf.Event to event.Event
 	transformedEvents := make(chan event.Event, 500)
 	go func() {
 		defer close(transformedEvents)
@@ -42,7 +40,7 @@ func main() {
 		}
 	}()
 
-	// 6. Hand over to the final pipeline runner (with Tracker & Lineage)
+	// 5. Hand over to the final pipeline runner (with Tracker & Lineage)
 	log.Println("OpenClaw core pipeline is running...")
 	pipeline.Run(transformedEvents)
 }

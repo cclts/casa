@@ -12,6 +12,7 @@ import (
 
 func Run(events <-chan event.Event) {
 	tracker := process.NewTracker()
+	sessionTracker := process.NewSessionTracker(tracker)
 
 	if err := process.BootstrapOpenClaw(tracker); err != nil {
 		log.Println("bootstrap error:", err)
@@ -32,10 +33,14 @@ func Run(events <-chan event.Event) {
 			continue
 		}
 
-		// Retrieve the full process lineage.
-		lineage := process.BuildLineage(int(e.PID), tracker)
+		//Session Tracker
+		sess, lineage, ok := sessionTracker.ResolveSession(e.PID)
+		if !ok {
+			continue
+		}
 
-		log.Printf("[%s] (PID: %d, Depth: %d)", e.Type, e.PID, lineage.Depth)
+		info, _ := tracker.GetInfo(e.PID)
+		log.Printf("[%s] (PID: %d, Depth: %d, Session %d)", e.Type, e.PID, info.Depth, sess.ID)
 
 		switch e.Type {
 		case 0:

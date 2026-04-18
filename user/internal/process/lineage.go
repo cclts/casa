@@ -16,7 +16,6 @@ type Node struct {
 
 type Lineage struct {
 	Nodes []Node
-	Depth int
 }
 
 const MaxDepth = 4
@@ -64,7 +63,12 @@ func BuildLineage(pid int, tracker *Tracker) Lineage {
 		})
 
 		// Add the process into Tracker cache.
-		tracker.Add(uint32(current), uint32(ppid), comm)
+		depth := 0
+		if parent, ok := tracker.GetInfo(uint32(ppid)); ok {
+			depth = parent.Depth + 1
+		}
+
+		tracker.Add(uint32(current), uint32(ppid), comm, depth)
 		log.Printf("[DEBUG] Fallback hit: Discovered pre-existing process %d (%s), adding to tracker", current, comm)
 
 		// Stop tracing if reached the root process (e.g., OpenClaw Gateway).
@@ -78,6 +82,5 @@ func BuildLineage(pid int, tracker *Tracker) Lineage {
 
 	return Lineage{
 		Nodes: nodes,
-		Depth: len(nodes),
 	}
 }
