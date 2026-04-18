@@ -85,14 +85,13 @@ const highRiskMask = (1 << CAP_SYS_ADMIN) |
 	(1 << CAP_NET_ADMIN) |
 	(1 << CAP_NET_RAW)
 
-// ReadProcSecurity:
-// return (hasHighRiskCaps, seccompEnabled)
-func ReadProcSecurity(pid int) (bool, bool, error) {
+// ReadProcSecurityDetails returns the raw CapEff mask and seccomp mode.
+func ReadProcSecurityDetails(pid int) (uint64, int, error) {
 	path := fmt.Sprintf("/proc/%d/status", pid)
 
 	f, err := os.Open(path)
 	if err != nil {
-		return false, false, err
+		return 0, 0, err
 	}
 	defer f.Close()
 
@@ -132,12 +131,20 @@ func ReadProcSecurity(pid int) (bool, bool, error) {
 	}
 
 	if !foundCap || !foundSeccomp {
-		return false, false, fmt.Errorf("incomplete proc status")
+		return 0, 0, fmt.Errorf("incomplete proc status")
+	}
+
+	return capVal, seccompMode, nil
+}
+
+// ReadProcSecurity returns whether the process has high-risk capabilities and
+// whether seccomp is enabled.
+func ReadProcSecurity(pid int) (bool, bool, error) {
+	capVal, seccompMode, err := ReadProcSecurityDetails(pid)
+	if err != nil {
+		return false, false, err
 	}
 
 	hasHighRiskCaps := (capVal & highRiskMask) != 0
-
-	seccompEnabled := seccompMode != 0
-
-	return hasHighRiskCaps, seccompEnabled, nil
+	return hasHighRiskCaps, seccompMode != 0, nil
 }

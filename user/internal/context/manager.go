@@ -1,113 +1,99 @@
 package context
 
-// import (
-// 	"log"
-// 	"sync"
-// 	"time"
+import (
+	"sync"
+	"time"
 
-// 	"github.com/cclts/care-go/user/internal/event"
-// 	"github.com/cclts/care-go/user/internal/process"
-// )
+	"github.com/cclts/care-go/user/internal/event"
+	"github.com/cclts/care-go/user/internal/process"
+)
 
-// type Manager struct {
-// 	mu sync.Mutex
+type Manager struct {
+	mu               sync.Mutex
+	sessions         map[uint32]*SessionState
+	recentEventLimit int
+}
 
-// 	// rootPID → session(graph)
-// 	sessions map[uint32]*Session
+func NewManager() *Manager {
+	return &Manager{
+		sessions:         make(map[uint32]*SessionState),
+		recentEventLimit: defaultRecentEventLimit,
+	}
+}
 
-// 	tracker *process.Tracker
-// 	timeout time.Duration
-// }
+func (m *Manager) Observe(sessionID uint32, lineage process.Lineage, e event.Event, depth int) Context {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 
-// func NewManager(tracker *process.Tracker, timeout time.Duration) *Manager {
-// 	m := &Manager{
-// 		sessions: make(map[uint32]*Session),
-// 		tracker:  tracker,
-// 		timeout:  timeout,
-// 	}
+	state, ok := m.sessions[sessionID]
+	if !ok {
+		state = newSessionState(sessionID)
+		m.sessions[sessionID] = state
+	}
 
-// 	go m.gcLoop()
-// 	return m
-// }
+	now := time.Now()
+	state.UpdatedAt = now
 
-// // =====================
-// // Entry
-// // =====================
+	procState := state.ensureProcess(e.PID)
+	procState.PPID = e.PPID
+	procState.UID = e.UID
+	procState.Comm = e.Comm
+	procState.Depth = depth
+	procState.LastSeen = now
 
-// func (m *Manager) HandleEvent(e event.Event) {
-// 	m.mu.Lock()
-// 	defer m.mu.Unlock()
+	if procState.FirstSeen.IsZero() {
+		procState.FirstSeen = now
+	}
 
-// 	root := m.findRoot(e.PID)
+	procState.Lineage = rebuildLineage(lineage)
 
-// 	s, ok := m.sessions[root]
-// 	if !ok {
-// 		s = NewSession(root)
-// 		m.sessions[root] = s
-// 	}
+	switch e.Type {
+	case event.EventExecve:
+		procState.ExecPath = e.Path
+		procState.Args = append([]string(nil), e.Args...)
+		procState.ExecCount++
+	case event.EventOpenat:
+		procState.OpenCount++
+		procState.Opens = append(procState.Opens, ObservedOpen{
+			Path: e.Path,
+			Time: now,
+		})
+		procState.Opens = trimOpenEvents(procState.Opens)
+	case event.EventConnect:
+		procState.ConnectCount++
+		procState.Connects = append(procState.Connects, ObservedConnect{
+			Addr: e.Addr,
+			Port: e.Port,
+			Time: now,
+		})
+		procState.Connects = trimConnectEvents(procState.Connects)
+	}
 
-// 	switch e.Type {
+	state.RecentEvents = append(state.RecentEvents, ObservedEvent{
+		Type: e.Type,
+		PID:  e.PID,
+		Path: e.Path,
+		Addr: e.Addr,
+		Port: e.Port,
+		Time: now,
+	})
+	state.RecentEvents = trimRecentEvents(state.RecentEvents, m.recentEventLimit)
 
-// 	case event.EventExecve:
-// 		lineage := process.BuildLineage(int(e.PID), m.tracker)
+	return Build(state, e.PID)
+}
 
-// 		s.AddExec(
-// 			e.PID,
-// 			e.PPID,
-// 			e.Comm,
-// 			e.Path,
-// 			e.Args,
-// 			e.UID,
-// 			lineage,
-// 		)
+func rebuildLineage(lineage process.Lineage) []LineageNode {
+	if len(lineage.Nodes) == 0 {
+		return nil
+	}
 
-// 	case event.EventOpenat:
-// 		s.AddOpen(e.PID, e.Path)
-
-// 	case event.EventConnect:
-// 		s.AddConnect(e.PID, e.Addr, e.Port)
-// 	}
-// }
-
-// func (m *Manager) gcLoop() {
-// 	ticker := time.NewTicker(2 * time.Second)
-// 	defer ticker.Stop()
-
-// 	for range ticker.C {
-// 		m.gc()
-// 	}
-// }
-
-// func (m *Manager) gc() {
-// 	m.mu.Lock()
-// 	defer m.mu.Unlock()
-
-// 	now := time.Now()
-
-// 	for root, s := range m.sessions {
-// 		if now.Sub(s.LastSeen) > m.timeout {
-
-// 			ctx := BuildContext(s)
-
-// 			m.emit(s, ctx)
-// 			delete(m.sessions, root)
-// 		}
-// 	}
-// }
-
-// func (m *Manager) emit(s *Session, ctx Context) {
-
-// 	log.Println("====== SESSION ======")
-// 	log.Printf("Root: %d Nodes: %d", s.Root.PID, len(s.Nodes))
-
-// 	log.Printf("Depth: %d SuspiciousPath: %v Chain: %v",
-// 		ctx.Execution.Depth,
-// 		ctx.Execution.SuspiciousPath,
-// 		ctx.Execution.SuspiciousChain,
-// 	)
-
-// 	log.Printf("Connect→Exec: %v Sensitive→Connect: %v",
-// 		ctx.History.ConnectThenExec,
-// 		ctx.History.SensitiveThenConnect,
-// 	)
-// }
+	out := make([]LineageNode, 0, len(lineage.Nodes))
+	for _, n := range lineage.Nodes {
+		out = append(out, LineageNode{
+			PID:  uint32(n.PID),
+			PPID: uint32(n.PPID),
+			Comm: n.Comm,
+		})
+	}
+	return out
+}

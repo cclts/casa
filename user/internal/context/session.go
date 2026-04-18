@@ -1,154 +1,100 @@
 package context
 
-// import (
-// 	"time"
+import (
+	"time"
 
-// 	"github.com/cclts/care-go/user/internal/process"
-// )
+	"github.com/cclts/care-go/user/internal/event"
+)
 
-// // =====================
-// // Node (Process Node)
-// // =====================
+type SessionState struct {
+	ID        uint32
+	RootPID   uint32
+	Processes map[uint32]*ProcessState
 
-// type ProcNode struct {
-// 	PID  uint32
-// 	PPID uint32
+	RecentEvents []ObservedEvent
 
-// 	Comm string
-// 	Path string
-// 	UID  uint32
+	CreatedAt time.Time
+	UpdatedAt time.Time
+}
 
-// 	// execution info
-// 	ExecPath string
-// 	Args     []string
-// 	HasExec  bool
+type ProcessState struct {
+	PID  uint32
+	PPID uint32
+	UID  uint32
 
-// 	// behavior on this node
-// 	Opens    []string
-// 	Connects []ConnEvent
+	Comm     string
+	ExecPath string
+	Args     []string
+	Depth    int
 
-// 	FirstSeen time.Time
-// 	LastSeen  time.Time
+	ExecCount    int
+	OpenCount    int
+	ConnectCount int
 
-// 	Parent   *ProcNode
-// 	Children []*ProcNode
-// }
+	Opens    []ObservedOpen
+	Connects []ObservedConnect
 
-// // =====================
-// // Events
-// // =====================
+	Lineage []LineageNode
 
-// type ConnEvent struct {
-// 	Addr string
-// 	Port uint32
-// 	Time time.Time
-// }
+	FirstSeen time.Time
+	LastSeen  time.Time
+}
 
-// // =====================
-// // Session (Graph)
-// // =====================
+type LineageNode struct {
+	PID  uint32
+	PPID uint32
+	Comm string
+}
 
-// type Session struct {
-// 	Root *ProcNode
+type ObservedEvent struct {
+	Type event.EventType
+	PID  uint32
 
-// 	// PID → node
-// 	Nodes map[uint32]*ProcNode
+	Path string
+	Addr string
+	Port uint32
 
-// 	StartTime time.Time
-// 	LastSeen  time.Time
-// }
+	Time time.Time
+}
 
-// // =====================
-// // Constructor
-// // =====================
+type ObservedOpen struct {
+	Path string
+	Time time.Time
+}
 
-// func NewSession(rootPID uint32) *Session {
-// 	now := time.Now()
+type ObservedConnect struct {
+	Addr string
+	Port uint32
+	Time time.Time
+}
 
-// 	root := &ProcNode{
-// 		PID:       rootPID,
-// 		FirstSeen: now,
-// 		LastSeen:  now,
-// 	}
+func newSessionState(id uint32) *SessionState {
+	now := time.Now()
 
-// 	return &Session{
-// 		Root:      root,
-// 		Nodes:     map[uint32]*ProcNode{rootPID: root},
-// 		StartTime: now,
-// 		LastSeen:  now,
-// 	}
-// }
+	return &SessionState{
+		ID:          id,
+		RootPID:     id,
+		Processes:   make(map[uint32]*ProcessState),
+		RecentEvents: make([]ObservedEvent, 0, defaultRecentEventLimit),
+		CreatedAt:   now,
+		UpdatedAt:   now,
+	}
+}
 
-// // 確保 node 存在，並建立 parent-child 關係
-// func (s *Session) ensureNode(pid, ppid uint32) *ProcNode {
+func (s *SessionState) ensureProcess(pid uint32) *ProcessState {
+	if p, ok := s.Processes[pid]; ok {
+		return p
+	}
 
-// 	// 已存在
-// 	if n, ok := s.Nodes[pid]; ok {
-// 		return n
-// 	}
-
-// 	now := time.Now()
-
-// 	n := &ProcNode{
-// 		PID:       pid,
-// 		PPID:      ppid,
-// 		FirstSeen: now,
-// 		LastSeen:  now,
-// 	}
-
-// 	s.Nodes[pid] = n
-
-// 	// 建立 parent link
-// 	if parent, ok := s.Nodes[ppid]; ok {
-// 		n.Parent = parent
-// 		parent.Children = append(parent.Children, n)
-// 	}
-
-// 	return n
-// }
-
-// func (s *Session) AddExec(
-// 	pid, ppid uint32,
-// 	comm string,
-// 	path string,
-// 	args []string,
-// 	uid uint32,
-// 	lineage process.Lineage,
-// ) {
-
-// 	n := s.ensureNode(pid, ppid)
-
-// 	n.Comm = comm
-// 	n.ExecPath = path
-// 	n.Args = args
-// 	n.UID = uid
-// 	n.HasExec = true
-// 	n.LastSeen = time.Now()
-
-// 	// 👉 用 lineage 修正 parent 關係（避免 race / 遺失）
-// 	s.rebuildFromLineage(lineage)
-
-// 	s.LastSeen = time.Now()
-// }
-
-// func (s *Session) AddOpen(pid uint32, path string) {
-// 	n := s.ensureNode(pid, 0)
-
-// 	n.Opens = append(n.Opens, path)
-// 	n.LastSeen = time.Now()
-
-// 	s.LastSeen = n.LastSeen
-// }
-
-// func (s *Session) AddConnect(pid uint32, addr string, port uint32) {
-// 	n := s.ensureNode(pid, 0)
-
-// 	n.Connects = append(n.Connects, ConnEvent{
-// 		Addr: addr,
-// 		Port: port,
-// 		Time: time.Now(),
-// 	})
-
-// 	n.LastSeen = time.Now()
-// 	s.LastSeen = n.LastSeen
-// }
+	now := time.Now()
+	p := &ProcessState{
+		PID:       pid,
+		Opens:     make([]ObservedOpen, 0, 8),
+		Connects:  make([]ObservedConnect, 0, 8),
+		Lineage:   make([]LineageNode, 0, 4),
+		FirstSeen: now,
+		LastSeen:  now,
+	}
+	s.Processes[pid] = p
+	return p
+}
