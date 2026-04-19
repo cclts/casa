@@ -7,6 +7,7 @@ import (
 	"github.com/cclts/care-go/user/internal/event"
 )
 
+// ToEvent converts the fixed-width ring buffer payload into the internal event model.
 func ToEvent(e Event) event.Event {
 	ip := net.IPv4(
 		byte(e.Daddr),
@@ -15,6 +16,8 @@ func ToEvent(e Event) event.Event {
 		byte(e.Daddr>>24),
 	)
 
+	// Args are copied out of the fixed-size kernel payload and truncated to the
+	// maximum argument slots that the eBPF side exports.
 	args := make([]string, 0, e.Argc)
 	for i := 0; i < int(e.Argc); i++ {
 		if i >= 5 {
@@ -43,6 +46,7 @@ func ToEvent(e Event) event.Event {
 	}
 }
 
+// mapEventType keeps the raw eBPF event identifiers isolated from the rest of the codebase.
 func mapEventType(t uint32) event.EventType {
 	switch t {
 	case 0:

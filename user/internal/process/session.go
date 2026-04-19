@@ -6,8 +6,10 @@ import (
 	"time"
 )
 
+// SessionID identifies the worker-level session boundary currently used by the pipeline.
 type SessionID uint32
 
+// Session groups a set of related processes under one resolved worker root.
 type Session struct {
 	ID         SessionID
 	SessionPID uint32
@@ -17,6 +19,7 @@ type Session struct {
 	LastSeen  time.Time
 }
 
+// SessionTracker maps observed pids back to the worker process that owns the session.
 type SessionTracker struct {
 	mu sync.RWMutex
 
@@ -27,6 +30,7 @@ type SessionTracker struct {
 	tracker *Tracker
 }
 
+// NewSessionTracker creates the session resolver on top of the lineage tracker.
 func NewSessionTracker(tracker *Tracker) *SessionTracker {
 	return &SessionTracker{
 		sessions:     make(map[uint32]*Session),
@@ -35,13 +39,15 @@ func NewSessionTracker(tracker *Tracker) *SessionTracker {
 	}
 }
 
+// ResolveSession walks lineage and decides whether the pid belongs to a tracked OpenClaw session.
 func (st *SessionTracker) ResolveSession(pid uint32) (*Session, Lineage, bool) {
 	lineage := BuildLineage(int(pid), st.tracker)
 
 	var sessionPID uint32
 	found := false
 
-	// resolve session root
+	// Today a session is anchored at the OpenClaw worker node beneath a tracked root.
+	// This keeps aggregation stable across child processes and execve boundaries.
 	for _, n := range lineage.Nodes {
 		if st.tracker.IsRoot(uint32(n.PPID)) &&
 			strings.HasPrefix(n.Comm, "openclaw") {

@@ -1,5 +1,6 @@
 package event
 
+// EventType is the normalized event vocabulary used across the user-space pipeline.
 type EventType int
 
 const (
@@ -8,6 +9,7 @@ const (
 	EventConnect
 )
 
+// String renders the event type in a log-friendly form.
 func (t EventType) String() string {
 	switch t {
 	case EventExecve:
@@ -21,6 +23,7 @@ func (t EventType) String() string {
 	}
 }
 
+// Event is the shared user-space representation after raw eBPF events are normalized.
 type Event struct {
 	PID  uint32 // This is TGID (Process ID)
 	TID  uint32 // This is PID (Thread ID)

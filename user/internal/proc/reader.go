@@ -9,6 +9,7 @@ import (
 	"strings"
 )
 
+// ReadComm reads the command name for a process from /proc.
 func ReadComm(pid int) (string, error) {
 	data, err := os.ReadFile(fmt.Sprintf("/proc/%d/comm", pid))
 	if err != nil {
@@ -18,6 +19,7 @@ func ReadComm(pid int) (string, error) {
 	return strings.TrimSpace(string(data)), nil
 }
 
+// ReadPPID parses /proc/<pid>/stat and extracts the parent pid field.
 func ReadPPID(pid int) (int, error) {
 	data, err := os.ReadFile(fmt.Sprintf("/proc/%d/stat", pid))
 	if err != nil {
@@ -46,6 +48,7 @@ func ReadPPID(pid int) (int, error) {
 	return ppid, nil
 }
 
+// ListPIDs returns the numeric process directories visible under /proc.
 func ListPIDs() ([]int, error) {
 	entries, err := os.ReadDir("/proc")
 	if err != nil {
@@ -65,6 +68,7 @@ func ListPIDs() ([]int, error) {
 	return pids, nil
 }
 
+// ReadExe resolves the current executable path for a process.
 func ReadExe(pid int) (string, error) {
 	path, err := os.Readlink(fmt.Sprintf("/proc/%d/exe", pid))
 	if err != nil {
@@ -80,6 +84,7 @@ const (
 	CAP_NET_RAW    = 13
 )
 
+// highRiskMask is the subset of capabilities that the current model treats as especially sensitive.
 const highRiskMask = (1 << CAP_SYS_ADMIN) |
 	(1 << CAP_SYS_PTRACE) |
 	(1 << CAP_NET_ADMIN) |
@@ -99,6 +104,7 @@ func ReadProcSecurityDetails(pid int) (uint64, int, error) {
 	var seccompMode int
 	var foundCap, foundSeccomp bool
 
+	// The status file is line-oriented, so a scanner keeps parsing simple and cheap.
 	scanner := bufio.NewScanner(f)
 	for scanner.Scan() {
 		line := scanner.Text()

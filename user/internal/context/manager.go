@@ -8,12 +8,14 @@ import (
 	"github.com/cclts/care-go/user/internal/process"
 )
 
+// Manager owns the mutable session state used to build context snapshots over time.
 type Manager struct {
 	mu               sync.Mutex
 	sessions         map[uint32]*SessionState
 	recentEventLimit int
 }
 
+// NewManager creates the in-memory session store used by context generation.
 func NewManager() *Manager {
 	return &Manager{
 		sessions:         make(map[uint32]*SessionState),
@@ -21,6 +23,7 @@ func NewManager() *Manager {
 	}
 }
 
+// Observe folds one normalized event into session state and returns the updated context snapshot.
 func (m *Manager) Observe(sessionID uint32, lineage process.Lineage, e event.Event, depth int) Context {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -45,6 +48,7 @@ func (m *Manager) Observe(sessionID uint32, lineage process.Lineage, e event.Eve
 		procState.FirstSeen = now
 	}
 
+	// Persist the freshest lineage view so later context builders can use a stable snapshot.
 	procState.Lineage = rebuildLineage(lineage)
 
 	switch e.Type {
@@ -69,6 +73,8 @@ func (m *Manager) Observe(sessionID uint32, lineage process.Lineage, e event.Eve
 		procState.Connects = trimConnectEvents(procState.Connects)
 	}
 
+	// Session history is kept separately from per-process artifacts because several
+	// features reason about event ordering across the full session window.
 	state.RecentEvents = append(state.RecentEvents, ObservedEvent{
 		Type: e.Type,
 		PID:  e.PID,
@@ -82,6 +88,7 @@ func (m *Manager) Observe(sessionID uint32, lineage process.Lineage, e event.Eve
 	return Build(state, e.PID)
 }
 
+// rebuildLineage converts the process package's lineage model into the context-local shape.
 func rebuildLineage(lineage process.Lineage) []LineageNode {
 	if len(lineage.Nodes) == 0 {
 		return nil

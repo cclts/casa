@@ -2,15 +2,18 @@ package pipeline
 
 import (
 	"bytes"
+
 	"github.com/cclts/care-go/user/internal/ebpf"
 )
 
+// blackList suppresses noisy commands that are not useful for the current analysis flow.
 var blackList = map[string]bool{
 	"cpuUsage.sh": true,
 	"ps":          true,
 	"node":        true,
 }
 
+// Filter drops known-noisy events before they reach the more expensive user-space stages.
 func Filter(rawEvents <-chan ebpf.Event) <-chan ebpf.Event {
 	filtered := make(chan ebpf.Event, 500)
 

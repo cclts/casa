@@ -7,6 +7,8 @@ import (
 	"github.com/cclts/care-go/user/internal/proc"
 )
 
+// BootstrapOpenClaw seeds the tracker with already-running OpenClaw processes so
+// later events can still resolve lineage for pre-existing workers.
 func BootstrapOpenClaw(tracker *Tracker) error {
 	pids, err := proc.ListPIDs()
 	if err != nil {

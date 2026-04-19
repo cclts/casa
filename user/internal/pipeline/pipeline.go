@@ -4,12 +4,16 @@ import (
 	"log"
 	"strings"
 
+	"github.com/cclts/care-go/user/internal/audit"
 	"github.com/cclts/care-go/user/internal/context"
+	"github.com/cclts/care-go/user/internal/decision"
 	"github.com/cclts/care-go/user/internal/event"
 	"github.com/cclts/care-go/user/internal/process"
 )
 
-func Run(events <-chan event.Event) {
+// Run is the main user-space analysis loop. It enriches events with process state,
+// derives context, evaluates risk, and writes audit records.
+func Run(events <-chan event.Event, decisionEngine *decision.Engine, auditMonitor *audit.Monitor) {
 	tracker := process.NewTracker()
 	sessionTracker := process.NewSessionTracker(tracker)
 	contextManager := context.NewManager()
@@ -33,14 +37,16 @@ func Run(events <-chan event.Event) {
 			continue
 		}
 
-		//Session Tracker
+		// Resolve the event into the coarse "worker session" boundary the system uses today.
 		sess, lineage, ok := sessionTracker.ResolveSession(e.PID)
 		if !ok {
 			continue
 		}
 
+		// The tracker caches parent/child depth so later stages do not have to re-walk /proc.
 		info, _ := tracker.GetInfo(e.PID)
 		ctx := contextManager.Observe(sess.SessionPID, lineage, e, info.Depth)
+		result := decisionEngine.Evaluate(ctx)
 		log.Printf("[%s] (PID: %d, Depth: %d, Session %d)", e.Type, e.PID, info.Depth, sess.ID)
 
 		switch e.Type {
@@ -60,6 +66,7 @@ func Run(events <-chan event.Event) {
 		case event.EventConnect:
 			log.Printf("  ➤ Connect: %s:%d", e.Addr, e.Port)
 		}
+		// Print lineage inline because it is often the fastest way to explain suspicious ancestry.
 		for i, n := range lineage.Nodes {
 			prefix := "  ↳"
 			if i == 0 {
@@ -87,5 +94,17 @@ func Run(events <-chan event.Event) {
 			ctx.History.ConnectThenExec,
 			ctx.History.SensitiveFileThenNet,
 		)
+		log.Printf("  • Decision: action=%s score=%d thresholds(log=%d alert=%d) rules=%v",
+			result.Action,
+			result.Score,
+			result.LogThreshold,
+			result.AlertThreshold,
+			result.Triggered,
+		)
+
+		// Audit output is best-effort: analysis should continue even if disk logging fails.
+		if err := auditMonitor.Record(e, ctx, result); err != nil {
+			log.Printf("  • Audit: write_failed err=%v", err)
+		}
 	}
 }

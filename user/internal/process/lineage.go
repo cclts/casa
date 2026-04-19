@@ -6,6 +6,7 @@ import (
 	"github.com/cclts/care-go/user/internal/proc"
 )
 
+// Node is a single point in the ancestry chain used for lineage reporting.
 type Node struct {
 	PID  int
 	PPID int
@@ -14,12 +15,14 @@ type Node struct {
 	UID  int
 }
 
+// Lineage is ordered from the target process upward toward the tracked root.
 type Lineage struct {
 	Nodes []Node
 }
 
 const MaxDepth = 4
 
+// BuildLineage walks parent processes using the tracker cache first and /proc as fallback.
 func BuildLineage(pid int, tracker *Tracker) Lineage {
 	var nodes []Node
 	current := pid

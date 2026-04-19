@@ -1,5 +1,6 @@
 package ebpf
 
+// Event must stay layout-compatible with the struct emitted from the kernel side.
 type Event struct {
 	Tgid     uint32
 	Pid      uint32
