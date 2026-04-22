@@ -9,7 +9,6 @@ import (
 // SessionState is the in-memory aggregation unit that holds process state and recent history.
 type SessionState struct {
 	ID        uint32
-	RootPID   uint32
 	Processes map[uint32]*ProcessState
 
 	RecentEvents []ObservedEvent
@@ -75,33 +74,29 @@ type ObservedConnect struct {
 }
 
 // newSessionState initializes the in-memory container for one resolved session.
-func newSessionState(id uint32) *SessionState {
-	now := time.Now()
-
+func newSessionState(id uint32, createdAt time.Time) *SessionState {
 	return &SessionState{
 		ID:          id,
-		RootPID:     id,
 		Processes:   make(map[uint32]*ProcessState),
 		RecentEvents: make([]ObservedEvent, 0, defaultRecentEventLimit),
-		CreatedAt:   now,
-		UpdatedAt:   now,
+		CreatedAt:   createdAt,
+		UpdatedAt:   createdAt,
 	}
 }
 
 // ensureProcess returns the per-process state bucket, creating it on first sighting.
-func (s *SessionState) ensureProcess(pid uint32) *ProcessState {
+func (s *SessionState) ensureProcess(pid uint32, seenAt time.Time) *ProcessState {
 	if p, ok := s.Processes[pid]; ok {
 		return p
 	}
 
-	now := time.Now()
 	p := &ProcessState{
 		PID:       pid,
 		Opens:     make([]ObservedOpen, 0, 8),
 		Connects:  make([]ObservedConnect, 0, 8),
 		Lineage:   make([]LineageNode, 0, 4),
-		FirstSeen: now,
-		LastSeen:  now,
+		FirstSeen: seenAt,
+		LastSeen:  seenAt,
 	}
 	s.Processes[pid] = p
 	return p

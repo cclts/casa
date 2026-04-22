@@ -17,6 +17,7 @@ struct event {
     __u32 uid;
     __u32 type;
     __u32 argc;
+    __u64 ts_ns;
     char comm[TASK_COMM_LEN];
     char filename[MAX_FILENAME_LEN];
     char args[MAX_ARGS][ARG_LEN];

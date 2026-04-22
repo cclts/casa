@@ -6,7 +6,6 @@ const (
 	// Keep only a bounded slice of recent history so per-session memory stays predictable.
 	defaultRecentEventLimit = 64
 	maxPerProcessArtifacts  = 16
-	deepChainThreshold      = 4
 )
 
 // isSuspiciousPath marks common execution locations used by fileless or short-lived payloads.

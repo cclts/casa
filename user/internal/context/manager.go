@@ -2,7 +2,6 @@ package context
 
 import (
 	"sync"
-	"time"
 
 	"github.com/cclts/care-go/user/internal/event"
 	"github.com/cclts/care-go/user/internal/process"
@@ -30,22 +29,21 @@ func (m *Manager) Observe(sessionID uint32, lineage process.Lineage, e event.Eve
 
 	state, ok := m.sessions[sessionID]
 	if !ok {
-		state = newSessionState(sessionID)
+		state = newSessionState(sessionID, e.Time)
 		m.sessions[sessionID] = state
 	}
 
-	now := time.Now()
-	state.UpdatedAt = now
+	state.UpdatedAt = e.Time
 
-	procState := state.ensureProcess(e.PID)
+	procState := state.ensureProcess(e.PID, e.Time)
 	procState.PPID = e.PPID
 	procState.UID = e.UID
 	procState.Comm = e.Comm
 	procState.Depth = depth
-	procState.LastSeen = now
+	procState.LastSeen = e.Time
 
 	if procState.FirstSeen.IsZero() {
-		procState.FirstSeen = now
+		procState.FirstSeen = e.Time
 	}
 
 	// Persist the freshest lineage view so later context builders can use a stable snapshot.
@@ -60,7 +58,7 @@ func (m *Manager) Observe(sessionID uint32, lineage process.Lineage, e event.Eve
 		procState.OpenCount++
 		procState.Opens = append(procState.Opens, ObservedOpen{
 			Path: e.Path,
-			Time: now,
+			Time: e.Time,
 		})
 		procState.Opens = trimOpenEvents(procState.Opens)
 	case event.EventConnect:
@@ -68,7 +66,7 @@ func (m *Manager) Observe(sessionID uint32, lineage process.Lineage, e event.Eve
 		procState.Connects = append(procState.Connects, ObservedConnect{
 			Addr: e.Addr,
 			Port: e.Port,
-			Time: now,
+			Time: e.Time,
 		})
 		procState.Connects = trimConnectEvents(procState.Connects)
 	}
@@ -81,7 +79,7 @@ func (m *Manager) Observe(sessionID uint32, lineage process.Lineage, e event.Eve
 		Path: e.Path,
 		Addr: e.Addr,
 		Port: e.Port,
-		Time: now,
+		Time: e.Time,
 	})
 	state.RecentEvents = trimRecentEvents(state.RecentEvents, m.recentEventLimit)
 

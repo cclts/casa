@@ -16,8 +16,14 @@ type FeatureValue struct {
 
 // Config is the on-disk JSON schema for thresholds and weighted rules.
 type Config struct {
+	Analysis   AnalysisConfig `json:"analysis"`
 	Thresholds Thresholds `json:"thresholds"`
 	Rules      []Rule     `json:"rules"`
+}
+
+// AnalysisConfig holds non-rule knobs that still belong to the same policy source of truth.
+type AnalysisConfig struct {
+	LineageMaxDepth int `json:"lineage_max_depth"`
 }
 
 // Thresholds defines the cutoffs that map numeric score to a decision action.
@@ -73,6 +79,14 @@ func (e *Engine) Reload() error {
 	e.mu.Unlock()
 
 	return nil
+}
+
+// ConfigSnapshot returns a copy of the active configuration.
+func (e *Engine) ConfigSnapshot() Config {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+
+	return e.config
 }
 
 // Evaluate applies all enabled rules and returns the accumulated score and matches.
@@ -131,6 +145,9 @@ func LoadConfig(path string) (Config, error) {
 
 // Validate checks that thresholds and per-rule match settings are internally consistent.
 func (c Config) Validate() error {
+	if c.Analysis.LineageMaxDepth <= 0 {
+		return fmt.Errorf("analysis.lineage_max_depth must be > 0")
+	}
 	if c.Thresholds.Log < 0 || c.Thresholds.Alert < 0 {
 		return fmt.Errorf("thresholds must be non-negative")
 	}

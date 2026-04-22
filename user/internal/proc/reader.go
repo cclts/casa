@@ -7,6 +7,8 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
+	"time"
 )
 
 // ReadComm reads the command name for a process from /proc.
@@ -77,6 +79,67 @@ func ReadExe(pid int) (string, error) {
 	return path, nil
 }
 
+var (
+	bootTimeOnce sync.Once
+	bootTime     time.Time
+	bootTimeErr  error
+)
+
+// ReadBootTime reads the system boot time from /proc/stat and caches it for reuse.
+func ReadBootTime() (time.Time, error) {
+	bootTimeOnce.Do(func() {
+		data, err := os.ReadFile("/proc/stat")
+		if err != nil {
+			bootTimeErr = err
+			return
+		}
+
+		for _, line := range strings.Split(string(data), "\n") {
+			if !strings.HasPrefix(line, "btime ") {
+				continue
+			}
+
+			fields := strings.Fields(line)
+			if len(fields) != 2 {
+				bootTimeErr = fmt.Errorf("invalid btime format")
+				return
+			}
+
+			secs, err := strconv.ParseInt(fields[1], 10, 64)
+			if err != nil {
+				bootTimeErr = err
+				return
+			}
+
+			bootTime = time.Unix(secs, 0)
+			return
+		}
+
+		bootTimeErr = fmt.Errorf("btime not found in /proc/stat")
+	})
+
+	return bootTime, bootTimeErr
+}
+
+// EventTimeFromKtime converts a monotonic boot-relative kernel timestamp into wall-clock time.
+func EventTimeFromKtime(ktimeNS uint64) (time.Time, error) {
+	boot, err := ReadBootTime()
+	if err != nil {
+		return time.Time{}, err
+	}
+
+	return boot.Add(time.Duration(ktimeNS)), nil
+}
+
+// FormatEventTime renders an event time in a stable human-readable form.
+func FormatEventTime(ts time.Time) string {
+	if ts.IsZero() {
+		return ""
+	}
+
+	return ts.Local().Format(time.RFC3339Nano)
+}
+
 const (
 	CAP_SYS_ADMIN  = 21
 	CAP_SYS_PTRACE = 19
@@ -143,14 +206,3 @@ func ReadProcSecurityDetails(pid int) (uint64, int, error) {
 	return capVal, seccompMode, nil
 }
 
-// ReadProcSecurity returns whether the process has high-risk capabilities and
-// whether seccomp is enabled.
-func ReadProcSecurity(pid int) (bool, bool, error) {
-	capVal, seccompMode, err := ReadProcSecurityDetails(pid)
-	if err != nil {
-		return false, false, err
-	}
-
-	hasHighRiskCaps := (capVal & highRiskMask) != 0
-	return hasHighRiskCaps, seccompMode != 0, nil
-}

@@ -1,4 +1,7 @@
 {
+  "analysis": {
+    "lineage_max_depth": 4
+  },
   "thresholds": {
     "log": 5,
     "alert": 10
