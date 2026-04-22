@@ -20,14 +20,12 @@ type Lineage struct {
 	Nodes []Node
 }
 
-const MaxDepth = 4
-
 // BuildLineage walks parent processes using the tracker cache first and /proc as fallback.
-func BuildLineage(pid int, tracker *Tracker) Lineage {
+func BuildLineage(pid int, tracker *Tracker, maxDepth int) Lineage {
 	var nodes []Node
 	current := pid
 
-	for i := 0; i < MaxDepth; i++ {
+	for i := 0; i < maxDepth; i++ {
 		// Check the Tracker cache first.
 		if info, ok := tracker.GetInfo(uint32(current)); ok {
 			nodes = append(nodes, Node{

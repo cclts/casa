@@ -4,6 +4,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 
 	"github.com/cclts/care-go/user/internal/audit"
@@ -37,20 +38,27 @@ func main() {
 	}
 
 	decisionEngine := decision.NewEngine(ruleEngine)
-	setupReload(decisionEngine, rulePath)
+	stopReload := setupReload(decisionEngine, rulePath)
+	defer stopReload()
 
 	auditMonitor, err := audit.NewMonitor(logPath, alertPath)
 	if err != nil {
 		log.Fatal("Failed to initialize audit monitor:", err)
 	}
-	defer auditMonitor.Close()
 
 	// Load and prepare the compiled eBPF object file.
 	loader, err := ebpf.Load("ebpf/build/probes.o")
 	if err != nil {
 		log.Fatal("Failed to load eBPF:", err)
 	}
-	defer loader.Close()
+
+	var shutdownOnce sync.Once
+	shutdownEBPF := func() {
+		shutdownOnce.Do(func() {
+			loader.Close()
+		})
+	}
+	defer shutdownEBPF()
 
 	// Attach tracepoints before starting any readers so the pipeline sees new events.
 	if err := loader.Attach(); err != nil {
@@ -79,11 +87,32 @@ func main() {
 	// Hand the normalized stream to the user-space analysis pipeline.
 	log.Println("OpenClaw core pipeline is running...")
 	log.Printf("Audit logging enabled: audit=%s alert=%s", logPath, alertPath)
-	pipeline.Run(transformedEvents, decisionEngine, auditMonitor)
+
+	stopSignals := make(chan os.Signal, 1)
+	signal.Notify(stopSignals, syscall.SIGINT, syscall.SIGTERM)
+	defer signal.Stop(stopSignals)
+
+	pipelineDone := make(chan struct{})
+	go func() {
+		defer close(pipelineDone)
+		pipeline.Run(transformedEvents, decisionEngine, auditMonitor)
+	}()
+
+	select {
+	case sig := <-stopSignals:
+		log.Printf("Received %s, starting graceful shutdown", sig)
+		shutdownEBPF()
+		<-pipelineDone
+	case <-pipelineDone:
+	}
+
+	if err := auditMonitor.Close(); err != nil {
+		log.Printf("Audit monitor close failed: %v", err)
+	}
 }
 
 // setupReload keeps the in-memory rule engine synchronized with the on-disk rule file.
-func setupReload(engine *decision.Engine, rulePath string) {
+func setupReload(engine *decision.Engine, rulePath string) func() {
 	signals := make(chan os.Signal, 1)
 	signal.Notify(signals, syscall.SIGHUP)
 
@@ -97,4 +126,9 @@ func setupReload(engine *decision.Engine, rulePath string) {
 			log.Printf("rule config reloaded from %s", rulePath)
 		}
 	}()
+
+	return func() {
+		signal.Stop(signals)
+		close(signals)
+	}
 }

@@ -45,7 +45,8 @@ func NewEngine(ruleEngine *rules.Engine) *Engine {
 
 // Evaluate scores a context snapshot and maps the numeric score to an action tier.
 func (e *Engine) Evaluate(ctx context.Context) Result {
-	profile := BuildProfile(ctx)
+	cfg := e.ruleEngine.ConfigSnapshot()
+	profile := BuildProfile(ctx, cfg.Analysis.LineageMaxDepth)
 	score, triggered, threshold := e.ruleEngine.Evaluate(profile.Features)
 
 	action := ActionIgnore
@@ -66,17 +67,22 @@ func (e *Engine) Evaluate(ctx context.Context) Result {
 	}
 }
 
+// LineageMaxDepth exposes the configured lineage depth limit used throughout the pipeline.
+func (e *Engine) LineageMaxDepth() int {
+	return e.ruleEngine.ConfigSnapshot().Analysis.LineageMaxDepth
+}
+
 // Reload refreshes the backing rule configuration without restarting the process.
 func (e *Engine) Reload() error {
 	return e.ruleEngine.Reload()
 }
 
 // BuildProfile converts rich context into a flat feature map that rules can score.
-func BuildProfile(ctx context.Context) Profile {
+func BuildProfile(ctx context.Context, deepChainThreshold int) Profile {
 	features := map[string]rules.FeatureValue{
 		"execution.suspicious_path": boolFeature(ctx.Execution.SuspiciousPath),
 		"execution.chain_depth":     numberFeature(float64(ctx.Execution.ChainDepth)),
-		"execution.deep_chain":      boolFeature(ctx.Execution.ChainDepth >= 4),
+		"execution.deep_chain":      boolFeature(ctx.Execution.ChainDepth >= deepChainThreshold),
 		"capability.dangerous":      boolFeature(ctx.Capability.HasDangerousCaps),
 		"capability.dangerous_count": numberFeature(float64(len(ctx.Capability.DangerousCaps))),
 		"capability.seccomp_disabled": boolFeature(!ctx.Capability.CapabilityUnknown && !ctx.Capability.SeccompEnabled),

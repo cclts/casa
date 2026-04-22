@@ -38,7 +38,11 @@ func Run(events <-chan event.Event, decisionEngine *decision.Engine, auditMonito
 		}
 
 		// Resolve the event into the coarse "worker session" boundary the system uses today.
-		sess, lineage, ok := sessionTracker.ResolveSession(e.PID)
+		sess, lineage, ok := sessionTracker.ResolveSession(
+			e.PID,
+			e.Time,
+			decisionEngine.LineageMaxDepth(),
+		)
 		if !ok {
 			continue
 		}
@@ -47,7 +51,7 @@ func Run(events <-chan event.Event, decisionEngine *decision.Engine, auditMonito
 		info, _ := tracker.GetInfo(e.PID)
 		ctx := contextManager.Observe(sess.SessionPID, lineage, e, info.Depth)
 		result := decisionEngine.Evaluate(ctx)
-		log.Printf("[%s] (PID: %d, Depth: %d, Session %d)", e.Type, e.PID, info.Depth, sess.ID)
+		log.Printf("[%s] (Time: %s PID: %d, Depth: %d, Session %d)", e.Type, e.TimeHuman, e.PID, info.Depth, sess.ID)
 
 		switch e.Type {
 		case event.EventExecve:

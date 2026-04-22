@@ -40,8 +40,8 @@ func NewSessionTracker(tracker *Tracker) *SessionTracker {
 }
 
 // ResolveSession walks lineage and decides whether the pid belongs to a tracked OpenClaw session.
-func (st *SessionTracker) ResolveSession(pid uint32) (*Session, Lineage, bool) {
-	lineage := BuildLineage(int(pid), st.tracker)
+func (st *SessionTracker) ResolveSession(pid uint32, eventTime time.Time, maxDepth int) (*Session, Lineage, bool) {
+	lineage := BuildLineage(int(pid), st.tracker, maxDepth)
 
 	var sessionPID uint32
 	found := false
@@ -71,13 +71,12 @@ func (st *SessionTracker) ResolveSession(pid uint32) (*Session, Lineage, bool) {
 			ID:         SessionID(sessionPID),
 			SessionPID: sessionPID,
 			Processes:  make(map[uint32]struct{}),
-			CreatedAt:  time.Now(),
+			CreatedAt:  eventTime,
 		}
 		st.sessions[sessionPID] = sess
 	}
 
-	now := time.Now()
-	sess.LastSeen = now
+	sess.LastSeen = eventTime
 
 	// add nodes to session
 	for _, n := range lineage.Nodes {

@@ -1,5 +1,7 @@
 package event
 
+import "time"
+
 // EventType is the normalized event vocabulary used across the user-space pipeline.
 type EventType int
 
@@ -36,6 +38,10 @@ type Event struct {
 
 	Addr string
 	Port uint32
+
+	KTimeNS   uint64
+	Time      time.Time
+	TimeHuman string
 
 	Type EventType
 }

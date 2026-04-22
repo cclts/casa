@@ -11,6 +11,7 @@ int handle_openat(struct trace_event_raw_sys_enter *ctx) {
     __builtin_memset(e, 0, sizeof(*e)); 
     
     e->type = EVENT_OPENAT;
+    e->ts_ns = bpf_ktime_get_ns();
     u64 pid_tgid = bpf_get_current_pid_tgid();
     e->tgid = pid_tgid >> 32;
     e->pid = pid_tgid & 0xffffffff;

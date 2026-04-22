@@ -3,8 +3,10 @@ package ebpf
 import (
 	"bytes"
 	"net"
+	"time"
 
 	"github.com/cclts/care-go/user/internal/event"
+	"github.com/cclts/care-go/user/internal/proc"
 )
 
 // ToEvent converts the fixed-width ring buffer payload into the internal event model.
@@ -28,6 +30,10 @@ func ToEvent(e Event) event.Event {
 	}
 
 	port := (e.Dport << 8) | (e.Dport >> 8)
+	eventTime, err := proc.EventTimeFromKtime(e.TsNS)
+	if err != nil {
+		eventTime = time.Time{}
+	}
 
 	return event.Event{
 		PID:  e.Tgid,
@@ -41,6 +47,10 @@ func ToEvent(e Event) event.Event {
 		Comm: string(bytes.TrimRight(e.Comm[:], "\x00")),
 		Path: string(bytes.TrimRight(e.Filename[:], "\x00")),
 		Args: args,
+
+		KTimeNS:   e.TsNS,
+		Time:      eventTime,
+		TimeHuman: proc.FormatEventTime(eventTime),
 
 		Type: mapEventType(e.Type),
 	}
