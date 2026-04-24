@@ -140,19 +140,6 @@ func FormatEventTime(ts time.Time) string {
 	return ts.Local().Format(time.RFC3339Nano)
 }
 
-const (
-	CAP_SYS_ADMIN  = 21
-	CAP_SYS_PTRACE = 19
-	CAP_NET_ADMIN  = 12
-	CAP_NET_RAW    = 13
-)
-
-// highRiskMask is the subset of capabilities that the current model treats as especially sensitive.
-const highRiskMask = (1 << CAP_SYS_ADMIN) |
-	(1 << CAP_SYS_PTRACE) |
-	(1 << CAP_NET_ADMIN) |
-	(1 << CAP_NET_RAW)
-
 // ReadProcSecurityDetails returns the raw CapEff mask and seccomp mode.
 func ReadProcSecurityDetails(pid int) (uint64, int, error) {
 	path := fmt.Sprintf("/proc/%d/status", pid)
@@ -199,8 +186,14 @@ func ReadProcSecurityDetails(pid int) (uint64, int, error) {
 		}
 	}
 
-	if !foundCap || !foundSeccomp {
-		return 0, 0, fmt.Errorf("incomplete proc status")
+	if !foundCap && !foundSeccomp {
+		return 0, 0, fmt.Errorf("missing CapEff and Seccomp in /proc/%d/status", pid)
+	}
+	if !foundCap {
+		return 0, 0, fmt.Errorf("missing CapEff in /proc/%d/status", pid)
+	}
+	if !foundSeccomp {
+		return 0, 0, fmt.Errorf("missing Seccomp in /proc/%d/status", pid)
 	}
 
 	return capVal, seccompMode, nil

@@ -62,6 +62,21 @@ func trimConnectEvents(items []ObservedConnect) []ObservedConnect {
 	return items[len(items)-maxPerProcessArtifacts:]
 }
 
+// appendUniqueEndpoint keeps a bounded de-duplicated set of recent remote destinations per session.
+func appendUniqueEndpoint(items []Endpoint, endpoint Endpoint) []Endpoint {
+	for _, item := range items {
+		if item == endpoint {
+			return items
+		}
+	}
+
+	items = append(items, endpoint)
+	if len(items) <= maxPerProcessArtifacts {
+		return items
+	}
+	return items[len(items)-maxPerProcessArtifacts:]
+}
+
 // trimRecentEvents bounds session-level history used for historical context generation.
 func trimRecentEvents(items []ObservedEvent, limit int) []ObservedEvent {
 	if len(items) <= limit {

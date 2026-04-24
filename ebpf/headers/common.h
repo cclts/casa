@@ -9,6 +9,7 @@
 #define EVENT_EXECVE 0
 #define EVENT_OPENAT 1
 #define EVENT_CONNECT 2
+#define EVENT_EXIT 3
 
 struct event {
     __u32 tgid;

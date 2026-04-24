@@ -49,7 +49,7 @@ type EventRecord struct {
 	Path string   `json:"path,omitempty"`
 	Args []string `json:"args,omitempty"`
 	Addr string   `json:"addr,omitempty"`
-	Port uint32   `json:"port,omitempty"`
+	Port uint16   `json:"port,omitempty"`
 }
 
 // DecisionRecord stores the scoring output that explains why a record was logged.

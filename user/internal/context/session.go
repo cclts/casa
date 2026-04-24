@@ -4,21 +4,28 @@ import (
 	"time"
 
 	"github.com/cclts/care-go/user/internal/event"
+	"github.com/cclts/care-go/user/internal/process"
 )
 
-// SessionState is the in-memory aggregation unit that holds process state and recent history.
-type SessionState struct {
+// SessionRecord is the in-memory aggregation unit that holds process state and recent history.
+type SessionRecord struct {
 	ID        uint32
-	Processes map[uint32]*ProcessState
+	Processes map[uint32]*ProcessRecord
 
 	RecentEvents []ObservedEvent
+	Counts       EventCounts
 
 	CreatedAt time.Time
 	UpdatedAt time.Time
+	ClosedAt  time.Time
+	IsClosed  bool
+
+	MaxLineageDepth       int
+	UniqueConnectEndpoints []Endpoint
 }
 
-// ProcessState is the long-lived per-process cache from which feature extraction reads.
-type ProcessState struct {
+// ProcessRecord is the long-lived per-process cache from which feature extraction reads.
+type ProcessRecord struct {
 	PID  uint32
 	PPID uint32
 	UID  uint32
@@ -26,7 +33,7 @@ type ProcessState struct {
 	Comm     string
 	ExecPath string
 	Args     []string
-	Depth    int
+	LineageDepth int
 
 	ExecCount    int
 	OpenCount    int
@@ -35,10 +42,26 @@ type ProcessState struct {
 	Opens    []ObservedOpen
 	Connects []ObservedConnect
 
-	Lineage []LineageNode
+	Lineage  []LineageNode
+	Security *process.SecuritySnapshot
 
 	FirstSeen time.Time
 	LastSeen  time.Time
+	ExitTime  time.Time
+	ExitSeen  bool
+}
+
+// EventCounts stores generic session counters without embedding security semantics.
+type EventCounts struct {
+	Execs    int
+	Opens    int
+	Connects int
+}
+
+// Endpoint stores a normalized remote address observed during the session.
+type Endpoint struct {
+	Addr string
+	Port uint16
 }
 
 // LineageNode stores the reduced ancestry view needed by execution context generation.
@@ -55,7 +78,7 @@ type ObservedEvent struct {
 
 	Path string
 	Addr string
-	Port uint32
+	Port uint16
 
 	Time time.Time
 }
@@ -68,29 +91,29 @@ type ObservedOpen struct {
 
 // ObservedConnect stores network artifacts used by historical pattern matching.
 type ObservedConnect struct {
-	Addr string
-	Port uint32
-	Time time.Time
+	Endpoint Endpoint
+	Time     time.Time
 }
 
-// newSessionState initializes the in-memory container for one resolved session.
-func newSessionState(id uint32, createdAt time.Time) *SessionState {
-	return &SessionState{
-		ID:          id,
-		Processes:   make(map[uint32]*ProcessState),
-		RecentEvents: make([]ObservedEvent, 0, defaultRecentEventLimit),
-		CreatedAt:   createdAt,
-		UpdatedAt:   createdAt,
+// newSessionRecord initializes the in-memory container for one resolved session.
+func newSessionRecord(id uint32, createdAt time.Time) *SessionRecord {
+	return &SessionRecord{
+		ID:              id,
+		Processes:       make(map[uint32]*ProcessRecord),
+		RecentEvents:    make([]ObservedEvent, 0, defaultRecentEventLimit),
+		UniqueConnectEndpoints: make([]Endpoint, 0, 8),
+		CreatedAt:       createdAt,
+		UpdatedAt:       createdAt,
 	}
 }
 
-// ensureProcess returns the per-process state bucket, creating it on first sighting.
-func (s *SessionState) ensureProcess(pid uint32, seenAt time.Time) *ProcessState {
+// getOrCreateProcess returns the per-process state bucket, creating it on first sighting.
+func (s *SessionRecord) getOrCreateProcess(pid uint32, seenAt time.Time) *ProcessRecord {
 	if p, ok := s.Processes[pid]; ok {
 		return p
 	}
 
-	p := &ProcessState{
+	p := &ProcessRecord{
 		PID:       pid,
 		Opens:     make([]ObservedOpen, 0, 8),
 		Connects:  make([]ObservedConnect, 0, 8),
@@ -100,4 +123,18 @@ func (s *SessionState) ensureProcess(pid uint32, seenAt time.Time) *ProcessState
 	}
 	s.Processes[pid] = p
 	return p
+}
+
+func (s *SessionRecord) allProcessesExited() bool {
+	if len(s.Processes) == 0 {
+		return false
+	}
+
+	for _, p := range s.Processes {
+		if !p.ExitSeen {
+			return false
+		}
+	}
+
+	return true
 }

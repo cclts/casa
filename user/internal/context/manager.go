@@ -2,6 +2,7 @@ package context
 
 import (
 	"sync"
+	"time"
 
 	"github.com/cclts/care-go/user/internal/event"
 	"github.com/cclts/care-go/user/internal/process"
@@ -10,70 +11,96 @@ import (
 // Manager owns the mutable session state used to build context snapshots over time.
 type Manager struct {
 	mu               sync.Mutex
-	sessions         map[uint32]*SessionState
+	sessions         map[uint32]*SessionRecord
 	recentEventLimit int
 }
 
 // NewManager creates the in-memory session store used by context generation.
 func NewManager() *Manager {
 	return &Manager{
-		sessions:         make(map[uint32]*SessionState),
+		sessions:         make(map[uint32]*SessionRecord),
 		recentEventLimit: defaultRecentEventLimit,
 	}
 }
 
-// Observe folds one normalized event into session state and returns the updated context snapshot.
-func (m *Manager) Observe(sessionID uint32, lineage process.Lineage, e event.Event, depth int) Context {
+// ObserveAndBuild folds one normalized event into session state and returns the updated context snapshot.
+func (m *Manager) ObserveAndBuild(
+	sessionID uint32,
+	lineage process.Lineage,
+	securityStore *process.SecurityStore,
+	e event.Event,
+	depth int,
+) Context {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	state, ok := m.sessions[sessionID]
+	session, ok := m.sessions[sessionID]
 	if !ok {
-		state = newSessionState(sessionID, e.Time)
-		m.sessions[sessionID] = state
+		session = newSessionRecord(sessionID, e.Time)
+		m.sessions[sessionID] = session
 	}
 
-	state.UpdatedAt = e.Time
-
-	procState := state.ensureProcess(e.PID, e.Time)
-	procState.PPID = e.PPID
-	procState.UID = e.UID
-	procState.Comm = e.Comm
-	procState.Depth = depth
-	procState.LastSeen = e.Time
-
-	if procState.FirstSeen.IsZero() {
-		procState.FirstSeen = e.Time
+	session.UpdatedAt = e.Time
+	if depth > session.MaxLineageDepth {
+		session.MaxLineageDepth = depth
 	}
 
-	// Persist the freshest lineage view so later context builders can use a stable snapshot.
-	procState.Lineage = rebuildLineage(lineage)
+	procRecord := session.getOrCreateProcess(e.PID, e.Time)
+	procRecord.PPID = e.PPID
+	procRecord.UID = e.UID
+	procRecord.Comm = e.Comm
+	procRecord.LineageDepth = depth
+	procRecord.LastSeen = e.Time
+	procRecord.Lineage = rebuildLineage(lineage)
+	if e.Type != event.EventExit {
+		procRecord.ExitSeen = false
+		procRecord.ExitTime = time.Time{}
+	}
+	if securityStore != nil {
+		if snapshot, ok := securityStore.Get(e.PID); ok {
+			procRecord.Security = snapshot
+		}
+	}
 
 	switch e.Type {
 	case event.EventExecve:
-		procState.ExecPath = e.Path
-		procState.Args = append([]string(nil), e.Args...)
-		procState.ExecCount++
+		procRecord.ExecPath = e.Path
+		procRecord.Args = append([]string(nil), e.Args...)
+		procRecord.ExecCount++
+		session.Counts.Execs++
 	case event.EventOpenat:
-		procState.OpenCount++
-		procState.Opens = append(procState.Opens, ObservedOpen{
+		procRecord.OpenCount++
+		session.Counts.Opens++
+		procRecord.Opens = append(procRecord.Opens, ObservedOpen{
 			Path: e.Path,
 			Time: e.Time,
 		})
-		procState.Opens = trimOpenEvents(procState.Opens)
+		procRecord.Opens = trimOpenEvents(procRecord.Opens)
 	case event.EventConnect:
-		procState.ConnectCount++
-		procState.Connects = append(procState.Connects, ObservedConnect{
-			Addr: e.Addr,
-			Port: e.Port,
+		procRecord.ConnectCount++
+		session.Counts.Connects++
+		procRecord.Connects = append(procRecord.Connects, ObservedConnect{
+			Endpoint: Endpoint{
+				Addr: e.Addr,
+				Port: e.Port,
+			},
 			Time: e.Time,
 		})
-		procState.Connects = trimConnectEvents(procState.Connects)
+		procRecord.Connects = trimConnectEvents(procRecord.Connects)
+		session.UniqueConnectEndpoints = appendUniqueEndpoint(session.UniqueConnectEndpoints, Endpoint{
+			Addr: e.Addr,
+			Port: e.Port,
+		})
+	case event.EventExit:
+		procRecord.ExitSeen = true
+		procRecord.ExitTime = e.Time
+		if e.PID == sessionID || session.allProcessesExited() {
+			session.IsClosed = true
+			session.ClosedAt = e.Time
+		}
 	}
 
-	// Session history is kept separately from per-process artifacts because several
-	// features reason about event ordering across the full session window.
-	state.RecentEvents = append(state.RecentEvents, ObservedEvent{
+	session.RecentEvents = append(session.RecentEvents, ObservedEvent{
 		Type: e.Type,
 		PID:  e.PID,
 		Path: e.Path,
@@ -81,9 +108,9 @@ func (m *Manager) Observe(sessionID uint32, lineage process.Lineage, e event.Eve
 		Port: e.Port,
 		Time: e.Time,
 	})
-	state.RecentEvents = trimRecentEvents(state.RecentEvents, m.recentEventLimit)
+	session.RecentEvents = trimRecentEvents(session.RecentEvents, m.recentEventLimit)
 
-	return Build(state, e.PID)
+	return Build(session, e.PID)
 }
 
 // rebuildLineage converts the process package's lineage model into the context-local shape.

@@ -9,6 +9,7 @@ const (
 	EventExecve EventType = iota
 	EventOpenat
 	EventConnect
+	EventExit
 )
 
 // String renders the event type in a log-friendly form.
@@ -20,6 +21,8 @@ func (t EventType) String() string {
 		return "OPENAT"
 	case EventConnect:
 		return "CONNECT"
+	case EventExit:
+		return "EXIT"
 	default:
 		return "OTHER"
 	}
@@ -37,7 +40,7 @@ type Event struct {
 	Args []string
 
 	Addr string
-	Port uint32
+	Port uint16
 
 	KTimeNS   uint64
 	Time      time.Time
