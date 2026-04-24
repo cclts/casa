@@ -42,7 +42,7 @@ func ToEvent(e Event) event.Event {
 		UID:  e.Uid,
 
 		Addr: ip.String(),
-		Port: uint32(port),
+		Port: port,
 
 		Comm: string(bytes.TrimRight(e.Comm[:], "\x00")),
 		Path: string(bytes.TrimRight(e.Filename[:], "\x00")),
@@ -65,6 +65,8 @@ func mapEventType(t uint32) event.EventType {
 		return event.EventOpenat
 	case 2:
 		return event.EventConnect
+	case 3:
+		return event.EventExit
 	default:
 		return event.EventExecve
 	}

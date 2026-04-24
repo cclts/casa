@@ -16,9 +16,10 @@ import (
 func Run(events <-chan event.Event, decisionEngine *decision.Engine, auditMonitor *audit.Monitor) {
 	tracker := process.NewTracker()
 	sessionTracker := process.NewSessionTracker(tracker)
+	securityStore := process.NewSecurityStore()
 	contextManager := context.NewManager()
 
-	if err := process.BootstrapOpenClaw(tracker); err != nil {
+	if err := process.BootstrapOpenClaw(tracker, securityStore); err != nil {
 		log.Println("bootstrap error:", err)
 	}
 
@@ -46,10 +47,44 @@ func Run(events <-chan event.Event, decisionEngine *decision.Engine, auditMonito
 		if !ok {
 			continue
 		}
+		switch e.Type {
+		case event.EventExecve:
+			sess.Counts.Execs++
+		case event.EventOpenat:
+			sess.Counts.Opens++
+		case event.EventConnect:
+			sess.Counts.Connects++
+			endpoint := process.Endpoint{
+				Addr: e.Addr,
+				Port: e.Port,
+			}
+			exists := false
+			for _, item := range sess.UniqueConnectEndpoints {
+				if item == endpoint {
+					exists = true
+					break
+				}
+			}
+			if !exists {
+				sess.UniqueConnectEndpoints = append(sess.UniqueConnectEndpoints, endpoint)
+				if len(sess.UniqueConnectEndpoints) > 16 {
+					sess.UniqueConnectEndpoints = sess.UniqueConnectEndpoints[len(sess.UniqueConnectEndpoints)-16:]
+				}
+			}
+		case event.EventExit:
+			if e.PID == sess.SessionPID {
+				sess.IsClosed = true
+				sess.ClosedAt = e.Time
+			}
+		}
+
+		if e.Type != event.EventExit {
+			securityStore.Ensure(e.PID)
+		}
 
 		// The tracker caches parent/child depth so later stages do not have to re-walk /proc.
 		info, _ := tracker.GetInfo(e.PID)
-		ctx := contextManager.Observe(sess.SessionPID, lineage, e, info.Depth)
+		ctx := contextManager.ObserveAndBuild(sess.SessionPID, lineage, securityStore, e, info.Depth)
 		result := decisionEngine.Evaluate(ctx)
 		log.Printf("[%s] (Time: %s PID: %d, Depth: %d, Session %d)", e.Type, e.TimeHuman, e.PID, info.Depth, sess.ID)
 
@@ -69,6 +104,8 @@ func Run(events <-chan event.Event, decisionEngine *decision.Engine, auditMonito
 			log.Printf("  ➤ Open: %s", e.Path)
 		case event.EventConnect:
 			log.Printf("  ➤ Connect: %s:%d", e.Addr, e.Port)
+		case event.EventExit:
+			log.Printf("  ➤ Exit: pid=%d tid=%d", e.PID, e.TID)
 		}
 		// Print lineage inline because it is often the fastest way to explain suspicious ancestry.
 		for i, n := range lineage.Nodes {
@@ -109,6 +146,11 @@ func Run(events <-chan event.Event, decisionEngine *decision.Engine, auditMonito
 		// Audit output is best-effort: analysis should continue even if disk logging fails.
 		if err := auditMonitor.Record(e, ctx, result); err != nil {
 			log.Printf("  • Audit: write_failed err=%v", err)
+		}
+
+		if e.Type == event.EventExit {
+			sessionTracker.HandleExit(e.PID, e.Time)
+			tracker.Remove(e.PID)
 		}
 	}
 }

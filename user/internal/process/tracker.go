@@ -85,3 +85,12 @@ func (t *Tracker) Propagate(pid uint32, ppid uint32, comm string) {
 		Depth: parent.Depth + 1,
 	}
 }
+
+// Remove drops a pid from the tracker so exited processes do not leak stale lineage.
+func (t *Tracker) Remove(pid uint32) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	delete(t.tracked, pid)
+	delete(t.roots, pid)
+}

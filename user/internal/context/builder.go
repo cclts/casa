@@ -5,7 +5,13 @@ import (
 	"sort"
 
 	"github.com/cclts/care-go/user/internal/event"
-	"github.com/cclts/care-go/user/internal/proc"
+)
+
+const (
+	capSysAdmin  = 21
+	capSysPtrace = 19
+	capNetAdmin  = 12
+	capNetRaw    = 13
 )
 
 // Context is the synthesized per-process view consumed by scoring and auditing.
@@ -39,78 +45,78 @@ type CapabilityContext struct {
 
 // HistoricalContext answers "what has this process already done?".
 type HistoricalContext struct {
-	RecentSyscalls        []string
-	ExecCount             int
-	OpenCount             int
-	ConnectCount          int
-	ConnectThenExec       bool
-	SensitiveFileThenNet  bool
-	TimeWindowSeconds     int64
+	RecentSyscalls       []string
+	ExecCount            int
+	OpenCount            int
+	ConnectCount         int
+	ConnectThenExec      bool
+	SensitiveFileThenNet bool
+	TimeWindowSeconds    int64
 }
 
 // Build materializes a context snapshot for one process inside a session.
-func Build(state *SessionState, targetPID uint32) Context {
+func Build(state *SessionRecord, targetPID uint32) Context {
 	ctx := Context{
 		SessionID: state.ID,
 		TargetPID: targetPID,
 	}
 
-	procState := state.Processes[targetPID]
-	if procState == nil {
+	procRecord := state.Processes[targetPID]
+	if procRecord == nil {
 		return ctx
 	}
 
-	ctx.Execution = buildExecutionContext(procState)
-	ctx.Capability = buildCapabilityContext(targetPID)
+	ctx.Execution = buildExecutionContext(procRecord)
+	ctx.Capability = buildCapabilityContext(procRecord)
 	ctx.History = buildHistoricalContext(state, targetPID)
 
 	return ctx
 }
 
 // buildExecutionContext projects lineage and execution metadata into a compact summary.
-func buildExecutionContext(procState *ProcessState) ExecutionChainContext {
-	lineage := append([]LineageNode(nil), procState.Lineage...)
+func buildExecutionContext(procRecord *ProcessRecord) ExecutionChainContext {
+	lineage := append([]LineageNode(nil), procRecord.Lineage...)
 	if len(lineage) == 0 {
 		lineage = []LineageNode{{
-			PID:  procState.PID,
-			PPID: procState.PPID,
-			Comm: procState.Comm,
+			PID:  procRecord.PID,
+			PPID: procRecord.PPID,
+			Comm: procRecord.Comm,
 		}}
 	}
 
 	return ExecutionChainContext{
 		Lineage:        lineage,
-		BinaryPath:     procState.ExecPath,
-		UID:            procState.UID,
-		ChainDepth:     procState.Depth,
-		SuspiciousPath: isSuspiciousPath(procState.ExecPath),
+		BinaryPath:     procRecord.ExecPath,
+		UID:            procRecord.UID,
+		ChainDepth:     procRecord.LineageDepth,
+		SuspiciousPath: isSuspiciousPath(procRecord.ExecPath),
 	}
 }
 
-// buildCapabilityContext augments runtime events with security posture from /proc.
-func buildCapabilityContext(pid uint32) CapabilityContext {
-	mask, seccompMode, err := proc.ReadProcSecurityDetails(int(pid))
-	if err != nil {
+// buildCapabilityContext reads the previously captured security snapshot for the process.
+func buildCapabilityContext(procRecord *ProcessRecord) CapabilityContext {
+	snapshot := procRecord.Security
+	if snapshot == nil || !snapshot.Available {
 		return CapabilityContext{
 			CapabilityUnknown: true,
 		}
 	}
 
-	dangerous := activeDangerousCaps(mask)
+	dangerous := activeDangerousCaps(snapshot.CapEffMask)
 
 	return CapabilityContext{
-		CapEffMask:       mask,
+		CapEffMask:       snapshot.CapEffMask,
 		DangerousCaps:    dangerous,
 		HasDangerousCaps: len(dangerous) > 0,
-		SeccompMode:      seccompMode,
-		SeccompEnabled:   seccompMode != 0,
+		SeccompMode:      snapshot.SeccompMode,
+		SeccompEnabled:   snapshot.SeccompMode != 0,
 	}
 }
 
 // buildHistoricalContext summarizes the recent syscall history observed for the process.
-func buildHistoricalContext(state *SessionState, targetPID uint32) HistoricalContext {
-	procState := state.Processes[targetPID]
-	if procState == nil {
+func buildHistoricalContext(state *SessionRecord, targetPID uint32) HistoricalContext {
+	procRecord := state.Processes[targetPID]
+	if procRecord == nil {
 		return HistoricalContext{}
 	}
 
@@ -136,11 +142,11 @@ func buildHistoricalContext(state *SessionState, targetPID uint32) HistoricalCon
 
 	return HistoricalContext{
 		RecentSyscalls:       recent,
-		ExecCount:            procState.ExecCount,
-		OpenCount:            procState.OpenCount,
-		ConnectCount:         procState.ConnectCount,
+		ExecCount:            procRecord.ExecCount,
+		OpenCount:            procRecord.OpenCount,
+		ConnectCount:         procRecord.ConnectCount,
 		ConnectThenExec:      detectConnectThenExec(state.RecentEvents, targetPID),
-		SensitiveFileThenNet: detectSensitiveThenNetwork(procState),
+		SensitiveFileThenNet: detectSensitiveThenNetwork(procRecord),
 		TimeWindowSeconds:    lastEventUnix - firstEventUnix,
 	}
 }
@@ -148,10 +154,10 @@ func buildHistoricalContext(state *SessionState, targetPID uint32) HistoricalCon
 // activeDangerousCaps expands a capability mask into the subset we currently score as risky.
 func activeDangerousCaps(mask uint64) []string {
 	mapping := map[uint]int{
-		proc.CAP_SYS_ADMIN:  0,
-		proc.CAP_NET_ADMIN:  1,
-		proc.CAP_NET_RAW:    2,
-		proc.CAP_SYS_PTRACE: 3,
+		capSysAdmin:  0,
+		capNetAdmin:  1,
+		capNetRaw:    2,
+		capSysPtrace: 3,
 	}
 
 	names := []string{
@@ -197,15 +203,15 @@ func detectConnectThenExec(events []ObservedEvent, targetPID uint32) bool {
 }
 
 // detectSensitiveThenNetwork flags a process that touched sensitive files before networking out.
-func detectSensitiveThenNetwork(procState *ProcessState) bool {
+func detectSensitiveThenNetwork(procRecord *ProcessRecord) bool {
 	var seenSensitive bool
 
-	for _, open := range procState.Opens {
+	for _, open := range procRecord.Opens {
 		if isSensitivePath(open.Path) {
 			seenSensitive = true
 			break
 		}
 	}
 
-	return seenSensitive && len(procState.Connects) > 0
+	return seenSensitive && len(procRecord.Connects) > 0
 }

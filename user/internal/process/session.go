@@ -17,6 +17,23 @@ type Session struct {
 
 	CreatedAt time.Time
 	LastSeen  time.Time
+	ClosedAt  time.Time
+	IsClosed  bool
+
+	MaxLineageDepth int
+	Counts          EventCounts
+	UniqueConnectEndpoints []Endpoint
+}
+
+type EventCounts struct {
+	Execs    int
+	Opens    int
+	Connects int
+}
+
+type Endpoint struct {
+	Addr string
+	Port uint16
 }
 
 // SessionTracker maps observed pids back to the worker process that owns the session.
@@ -68,15 +85,19 @@ func (st *SessionTracker) ResolveSession(pid uint32, eventTime time.Time, maxDep
 	sess, ok := st.sessions[sessionPID]
 	if !ok {
 		sess = &Session{
-			ID:         SessionID(sessionPID),
-			SessionPID: sessionPID,
-			Processes:  make(map[uint32]struct{}),
-			CreatedAt:  eventTime,
+			ID:              SessionID(sessionPID),
+			SessionPID:      sessionPID,
+			Processes:       make(map[uint32]struct{}),
+			UniqueConnectEndpoints: make([]Endpoint, 0, 8),
+			CreatedAt:       eventTime,
 		}
 		st.sessions[sessionPID] = sess
 	}
 
 	sess.LastSeen = eventTime
+	if depth := len(lineage.Nodes) - 1; depth > sess.MaxLineageDepth {
+		sess.MaxLineageDepth = depth
+	}
 
 	// add nodes to session
 	for _, n := range lineage.Nodes {
@@ -86,4 +107,28 @@ func (st *SessionTracker) ResolveSession(pid uint32, eventTime time.Time, maxDep
 	}
 
 	return sess, lineage, true
+}
+
+// HandleExit marks a tracked process as exited and closes the session when its anchor exits.
+func (st *SessionTracker) HandleExit(pid uint32, eventTime time.Time) {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+
+	sessionPID, ok := st.pidToSession[pid]
+	if !ok {
+		return
+	}
+
+	delete(st.pidToSession, pid)
+
+	sess, ok := st.sessions[sessionPID]
+	if !ok {
+		return
+	}
+
+	delete(sess.Processes, pid)
+	if pid == sessionPID || len(sess.Processes) == 0 {
+		sess.IsClosed = true
+		sess.ClosedAt = eventTime
+	}
 }

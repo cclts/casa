@@ -16,6 +16,7 @@ type bpfObjects struct {
 	ExecveProg  *ebpf.Program `ebpf:"handle_execve"`
 	OpenatProg  *ebpf.Program `ebpf:"handle_openat"`
 	ConnectProg *ebpf.Program `ebpf:"handle_connect"`
+	ExitProg    *ebpf.Program `ebpf:"handle_exit"`
 }
 
 // Loader owns the lifecycle of the eBPF collection, links, and ring buffer reader.
@@ -58,6 +59,7 @@ func (l *Loader) Attach() error {
 		{"syscalls", "sys_enter_execve", l.objs.ExecveProg},
 		{"syscalls", "sys_enter_openat", l.objs.OpenatProg},
 		{"syscalls", "sys_enter_connect", l.objs.ConnectProg},
+		{"sched", "sched_process_exit", l.objs.ExitProg},
 	}
 
 	for _, tp := range progs {
@@ -111,5 +113,8 @@ func (l *Loader) Close() {
 	}
 	if l.objs.ConnectProg != nil {
 		l.objs.ConnectProg.Close()
+	}
+	if l.objs.ExitProg != nil {
+		l.objs.ExitProg.Close()
 	}
 }

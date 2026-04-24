@@ -9,7 +9,7 @@ import (
 
 // BootstrapOpenClaw seeds the tracker with already-running OpenClaw processes so
 // later events can still resolve lineage for pre-existing workers.
-func BootstrapOpenClaw(tracker *Tracker) error {
+func BootstrapOpenClaw(tracker *Tracker, securityStore *SecurityStore) error {
 	pids, err := proc.ListPIDs()
 	if err != nil {
 		return err
@@ -34,6 +34,9 @@ func BootstrapOpenClaw(tracker *Tracker) error {
 
 			tracker.Add(uint32(pid), uint32(ppid), comm, 0)
 			tracker.AddRoot(uint32(pid))
+			if securityStore != nil {
+				securityStore.Ensure(uint32(pid))
+			}
 
 			found = true
 			log.Printf("[BOOTSTRAP] Found OpenClaw: pid=%d Comm=%s\n", pid, comm)
