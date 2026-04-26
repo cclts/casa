@@ -77,6 +77,11 @@ func (e *Engine) Reload() error {
 	return e.ruleEngine.Reload()
 }
 
+// CrossesAlertThreshold reports whether this result should be treated as alert-level.
+func (r Result) CrossesAlertThreshold() bool {
+	return r.Score >= r.AlertThreshold
+}
+
 // BuildProfile converts rich context into a flat feature map that rules can score.
 func BuildProfile(ctx context.Context, _ int) Profile {
 	features := map[string]any{
