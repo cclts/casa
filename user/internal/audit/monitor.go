@@ -7,14 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
-<<<<<<< ours
-<<<<<<< ours
-=======
 	"time"
->>>>>>> theirs
-=======
-	"time"
->>>>>>> theirs
 
 	"github.com/cclts/casa/user/internal/context"
 	"github.com/cclts/casa/user/internal/decision"
@@ -22,35 +15,13 @@ import (
 	"github.com/cclts/casa/user/internal/rules"
 )
 
-<<<<<<< ours
-<<<<<<< ours
-// Monitor owns the append-only audit sinks used for routine logs and high-risk alerts.
-type Monitor struct {
-	mu        sync.Mutex
-	logFile   *os.File
-	alertFile *os.File
-	queue     chan queuedRecord
-	done      chan struct{}
-	writerErr error
-	closed    bool
-}
-
-type queuedRecord struct {
-	record  Record
-	isAlert bool
-}
-
-// Record is the JSONL payload written to disk for every non-ignored decision.
-type Record struct {
-=======
-=======
->>>>>>> theirs
 const (
 	defaultAuditLogPath   = "user/logs/audit.log"
 	defaultAlertLogPath   = "user/logs/alert.log"
 	defaultEventLogPath   = "user/logs/events.log"
 	defaultSessionLogPath = "user/logs/sessions.log"
 	sessionFlushInterval  = 30 * time.Second
+	maxSessionEndpoints   = 16
 )
 
 // Monitor owns the append-only event and session log sinks.
@@ -67,10 +38,6 @@ type Monitor struct {
 
 // EventLogRecord is the JSONL payload written for every observed event.
 type EventLogRecord struct {
-<<<<<<< ours
->>>>>>> theirs
-=======
->>>>>>> theirs
 	Timestamp string          `json:"timestamp"`
 	SessionID uint32          `json:"session_id"`
 	TargetPID uint32          `json:"target_pid"`
@@ -79,24 +46,6 @@ type EventLogRecord struct {
 	Decision  DecisionRecord  `json:"decision"`
 }
 
-<<<<<<< ours
-<<<<<<< ours
-// EventRecord stores the normalized event fields that triggered evaluation.
-type EventRecord struct {
-	Type string   `json:"type"`
-	PID  uint32   `json:"pid"`
-	PPID uint32   `json:"ppid"`
-	UID  uint32   `json:"uid"`
-	Comm string   `json:"comm"`
-	Path string   `json:"path,omitempty"`
-	Args []string `json:"args,omitempty"`
-	Flags uint32  `json:"flags,omitempty"`
-	Mode  uint32  `json:"mode,omitempty"`
-	Addr string   `json:"addr,omitempty"`
-	Port uint16   `json:"port,omitempty"`
-=======
-=======
->>>>>>> theirs
 // SessionLogRecord is the JSONL payload written for session-level snapshots.
 type SessionLogRecord struct {
 	Timestamp    string          `json:"timestamp"`
@@ -110,14 +59,14 @@ type SessionLogRecord struct {
 
 // SessionRecord stores the monitor's current view of a session.
 type SessionRecord struct {
-	CreatedAt              string             `json:"created_at"`
-	UpdatedAt              string             `json:"updated_at"`
-	ClosedAt               string             `json:"closed_at,omitempty"`
-	IsClosed               bool               `json:"is_closed"`
-	EventCounts            context.EventCounts `json:"event_counts"`
-	UniqueConnectEndpoints []context.Endpoint `json:"unique_connect_endpoints"`
-	MaxScore               int                `json:"max_score"`
-	AlertTriggered         bool               `json:"alert_triggered"`
+	CreatedAt              string               `json:"created_at"`
+	UpdatedAt              string               `json:"updated_at"`
+	ClosedAt               string               `json:"closed_at,omitempty"`
+	IsClosed               bool                 `json:"is_closed"`
+	EventCounts            context.EventCounts  `json:"event_counts"`
+	UniqueConnectEndpoints []context.Endpoint   `json:"unique_connect_endpoints"`
+	MaxScore               int                  `json:"max_score"`
+	AlertTriggered         bool                 `json:"alert_triggered"`
 }
 
 // EventRecord stores the normalized event fields that triggered evaluation.
@@ -133,10 +82,6 @@ type EventRecord struct {
 	Mode  uint32   `json:"mode,omitempty"`
 	Addr  string   `json:"addr,omitempty"`
 	Port  uint16   `json:"port,omitempty"`
-<<<<<<< ours
->>>>>>> theirs
-=======
->>>>>>> theirs
 }
 
 // DecisionRecord stores the scoring output that explains why a record was logged.
@@ -148,14 +93,6 @@ type DecisionRecord struct {
 	Triggered      []rules.TriggeredRule `json:"triggered_rules"`
 }
 
-<<<<<<< ours
-<<<<<<< ours
-// NewMonitor opens append-only audit and alert log files.
-func NewMonitor(logPath, alertPath string) (*Monitor, error) {
-	logFile, err := openLogFile(logPath)
-=======
-=======
->>>>>>> theirs
 type sessionAggregate struct {
 	ID                     uint32
 	CreatedAt              time.Time
@@ -177,45 +114,17 @@ func NewMonitor(logPath, alertPath string) (*Monitor, error) {
 	sessionPath := resolveLogPath(alertPath, defaultAlertLogPath, defaultSessionLogPath)
 
 	eventFile, err := openLogFile(eventPath)
-<<<<<<< ours
->>>>>>> theirs
-=======
->>>>>>> theirs
 	if err != nil {
 		return nil, err
 	}
 
-<<<<<<< ours
-<<<<<<< ours
-	alertFile, err := openLogFile(alertPath)
-	if err != nil {
-		_ = logFile.Close()
-=======
 	sessionFile, err := openLogFile(sessionPath)
 	if err != nil {
 		_ = eventFile.Close()
->>>>>>> theirs
-=======
-	sessionFile, err := openLogFile(sessionPath)
-	if err != nil {
-		_ = eventFile.Close()
->>>>>>> theirs
 		return nil, err
 	}
 
 	m := &Monitor{
-<<<<<<< ours
-<<<<<<< ours
-		logFile:   logFile,
-		alertFile: alertFile,
-		queue:     make(chan queuedRecord, 1024),
-		done:      make(chan struct{}),
-	}
-
-	go m.runWriter()
-=======
-=======
->>>>>>> theirs
 		eventFile:   eventFile,
 		sessionFile: sessionFile,
 		sessions:    make(map[uint32]*sessionAggregate),
@@ -224,49 +133,10 @@ func NewMonitor(logPath, alertPath string) (*Monitor, error) {
 	}
 
 	go m.runPeriodicFlush()
-<<<<<<< ours
->>>>>>> theirs
-=======
->>>>>>> theirs
 
 	return m, nil
 }
 
-<<<<<<< ours
-<<<<<<< ours
-// runWriter serializes all disk writes through a single consumer goroutine.
-func (m *Monitor) runWriter() {
-	defer close(m.done)
-
-	for item := range m.queue {
-		if err := m.writeRecord(item); err != nil {
-			m.mu.Lock()
-			if m.writerErr == nil {
-				m.writerErr = err
-			}
-			m.mu.Unlock()
-		}
-	}
-
-	m.mu.Lock()
-	if m.writerErr == nil {
-		if err := syncFile(m.logFile); err != nil {
-			m.writerErr = err
-		}
-	}
-	if m.writerErr == nil {
-		if err := syncFile(m.alertFile); err != nil {
-			m.writerErr = err
-		}
-	}
-	m.mu.Unlock()
-}
-
-// Close stops the producer-consumer pipeline, waits for queued records to flush,
-// and then closes the underlying files.
-=======
-=======
->>>>>>> theirs
 func (m *Monitor) runPeriodicFlush() {
 	defer close(m.done)
 
@@ -288,23 +158,11 @@ func (m *Monitor) runPeriodicFlush() {
 }
 
 // Close flushes remaining session state, syncs files, and closes the sinks.
-<<<<<<< ours
->>>>>>> theirs
-=======
->>>>>>> theirs
 func (m *Monitor) Close() error {
 	m.mu.Lock()
 	if !m.closed {
 		m.closed = true
-<<<<<<< ours
-<<<<<<< ours
-		close(m.queue)
-=======
 		close(m.stopFlush)
->>>>>>> theirs
-=======
-		close(m.stopFlush)
->>>>>>> theirs
 	}
 	m.mu.Unlock()
 
@@ -313,23 +171,6 @@ func (m *Monitor) Close() error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-<<<<<<< ours
-<<<<<<< ours
-	firstErr := m.writerErr
-	if m.logFile != nil {
-		if err := m.logFile.Close(); err != nil && firstErr == nil {
-			firstErr = err
-		}
-		m.logFile = nil
-	}
-	if m.alertFile != nil {
-		if err := m.alertFile.Close(); err != nil && firstErr == nil {
-			firstErr = err
-		}
-		m.alertFile = nil
-=======
-=======
->>>>>>> theirs
 	if m.writerErr == nil {
 		m.flushSessionsLocked("shutdown", true)
 	}
@@ -356,70 +197,11 @@ func (m *Monitor) Close() error {
 			firstErr = err
 		}
 		m.sessionFile = nil
-<<<<<<< ours
->>>>>>> theirs
-=======
->>>>>>> theirs
 	}
 
 	return firstErr
 }
 
-<<<<<<< ours
-<<<<<<< ours
-// Record enqueues the full decision snapshot and mirrors alerts to the dedicated
-// alert sink inside the consumer goroutine.
-func (m *Monitor) Record(e event.Event, ctx context.Context, result decision.Result) error {
-	if result.Action == decision.ActionIgnore {
-		return nil
-	}
-
-	record := Record{
-		Timestamp: e.TimeHuman,
-		SessionID: ctx.SessionID,
-		TargetPID: ctx.TargetPID,
-		Event: EventRecord{
-			Type: e.Type.String(),
-			PID:  e.PID,
-			PPID: e.PPID,
-			UID:  e.UID,
-			Comm: e.Comm,
-			Path: e.Path,
-			Args: append([]string(nil), e.Args...),
-			Flags: e.Flags,
-			Mode:  e.Mode,
-			Addr: e.Addr,
-			Port: e.Port,
-		},
-		Context: ctx,
-		Decision: DecisionRecord{
-			Action:         result.Action,
-			Score:          result.Score,
-			LogThreshold:   result.LogThreshold,
-			AlertThreshold: result.AlertThreshold,
-			Triggered:      result.Triggered,
-		},
-	}
-
-	m.mu.Lock()
-	if m.writerErr != nil {
-		err := m.writerErr
-		m.mu.Unlock()
-		return err
-	}
-	if m.closed {
-		m.mu.Unlock()
-		return errors.New("audit monitor is closed")
-	}
-	queue := m.queue
-	m.mu.Unlock()
-
-	queue <- queuedRecord{
-		record:  record,
-		isAlert: result.Action == decision.ActionAlert,
-=======
-=======
->>>>>>> theirs
 // Record writes every event to events.log and writes session snapshots only on
 // root exit, first alert-threshold crossing, periodic flush, and shutdown.
 func (m *Monitor) Record(e event.Event, ctx context.Context, result decision.Result) error {
@@ -466,23 +248,11 @@ func (m *Monitor) Record(e event.Event, ctx context.Context, result decision.Res
 			return err
 		}
 		delete(m.sessions, ctx.SessionID)
-<<<<<<< ours
->>>>>>> theirs
-=======
->>>>>>> theirs
 	}
 
 	return nil
 }
 
-<<<<<<< ours
-<<<<<<< ours
-// writeRecord encodes one record and writes it to the configured sinks.
-func (m *Monitor) writeRecord(item queuedRecord) error {
-	line, err := json.Marshal(item.record)
-=======
-=======
->>>>>>> theirs
 func (m *Monitor) getOrCreateSessionLocked(sessionID uint32, createdAt time.Time) *sessionAggregate {
 	session, ok := m.sessions[sessionID]
 	if ok {
@@ -591,42 +361,18 @@ func buildDecisionRecord(result decision.Result) DecisionRecord {
 
 func (m *Monitor) writeJSONL(file *os.File, payload any, label string) error {
 	line, err := json.Marshal(payload)
-<<<<<<< ours
->>>>>>> theirs
-=======
->>>>>>> theirs
 	if err != nil {
 		return err
 	}
 	line = append(line, '\n')
 
-<<<<<<< ours
-<<<<<<< ours
-	if _, err := m.logFile.Write(line); err != nil {
-		return fmt.Errorf("write audit log: %w", err)
-	}
-	if item.isAlert {
-		if _, err := m.alertFile.Write(line); err != nil {
-			return fmt.Errorf("write alert log: %w", err)
-		}
-=======
 	if _, err := file.Write(line); err != nil {
 		return fmt.Errorf("write %s: %w", label, err)
->>>>>>> theirs
-=======
-	if _, err := file.Write(line); err != nil {
-		return fmt.Errorf("write %s: %w", label, err)
->>>>>>> theirs
 	}
 
 	return nil
 }
 
-<<<<<<< ours
-<<<<<<< ours
-=======
-=======
->>>>>>> theirs
 func resolveLogPath(path, legacyDefault, currentDefault string) string {
 	if path == "" {
 		return currentDefault
@@ -642,10 +388,20 @@ func resolveLogPath(path, legacyDefault, currentDefault string) string {
 	return path
 }
 
-<<<<<<< ours
->>>>>>> theirs
-=======
->>>>>>> theirs
+func appendUniqueEndpoint(items []context.Endpoint, endpoint context.Endpoint) []context.Endpoint {
+	for _, item := range items {
+		if item == endpoint {
+			return items
+		}
+	}
+
+	items = append(items, endpoint)
+	if len(items) <= maxSessionEndpoints {
+		return items
+	}
+	return items[len(items)-maxSessionEndpoints:]
+}
+
 // openLogFile ensures the parent directory exists before opening the target file.
 func openLogFile(path string) (*os.File, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
@@ -661,11 +417,6 @@ func syncFile(f *os.File) error {
 	}
 	return f.Sync()
 }
-<<<<<<< ours
-<<<<<<< ours
-=======
-=======
->>>>>>> theirs
 
 func formatTimestamp(ts time.Time) string {
 	if ts.IsZero() {
@@ -673,7 +424,3 @@ func formatTimestamp(ts time.Time) string {
 	}
 	return ts.Format(time.RFC3339Nano)
 }
-<<<<<<< ours
->>>>>>> theirs
-=======
->>>>>>> theirs
