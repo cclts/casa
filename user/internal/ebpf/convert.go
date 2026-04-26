@@ -47,6 +47,8 @@ func ToEvent(e Event) event.Event {
 		Comm: string(bytes.TrimRight(e.Comm[:], "\x00")),
 		Path: string(bytes.TrimRight(e.Filename[:], "\x00")),
 		Args: args,
+		Flags: e.Flags,
+		Mode:  e.Mode,
 
 		KTimeNS:   e.TsNS,
 		Time:      eventTime,

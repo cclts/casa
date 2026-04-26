@@ -1,61 +1,20 @@
-# If you prefer the allow list template instead of the deny list, see community template:
-# https://github.com/github/gitignore/blob/main/community/Golang/Go.AllowList.gitignore
-#
-# Binaries for programs and plugins
+# Go build
+user/app
 *.exe
-*.exe~
-*.dll
-*.so
-*.dylib
+*.out
 
 # eBPF build artifacts
-*.o
-*.a
-*.so
-*.bpf.o
-*.skel.h
-.output/
 ebpf/build/
+*.o
 
-# binaries
-minimal
-bootstrap
-kprobe
-uprobe
-tc
-lsm
-
-# system
-.DS_Store
+# generated headers
+ebpf/headers/vmlinux.h
 
 # logs
-*.log
+user/logs/
 
-# temp
-tmp/
-
-# Test binary, built with `go test -c`
-*.test
-
-# Debug symbols
-*.debug
-
-# Linux perf / trace artifacts
-perf.data
-perf.data.old
-
-# Code coverage profiles and other test artifacts
-*.out
-coverage.*
-*.coverprofile
-profile.cov
-
-# Dependency directories (remove the comment below to include it)
-# vendor/
-
-# Go workspace file
-go.work
-go.work.sum
+# OS junk
+.DS_Store
 
 # env file
 .env

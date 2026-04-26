@@ -78,16 +78,27 @@ func (e *Engine) Reload() error {
 }
 
 // BuildProfile converts rich context into a flat feature map that rules can score.
-func BuildProfile(ctx context.Context, deepChainThreshold int) Profile {
+func BuildProfile(ctx context.Context, _ int) Profile {
 	features := map[string]rules.FeatureValue{
-		"execution.suspicious_path": boolFeature(ctx.Execution.SuspiciousPath),
+		"execution.suspicious_path_exec": boolFeature(ctx.Execution.SuspiciousPathExec),
 		"execution.chain_depth":     numberFeature(float64(ctx.Execution.ChainDepth)),
-		"execution.deep_chain":      boolFeature(ctx.Execution.ChainDepth >= deepChainThreshold),
-		"capability.dangerous":      boolFeature(ctx.Capability.HasDangerousCaps),
+		"execution.deep_chain":      boolFeature(ctx.Execution.DeepChain),
+		"execution.shell_in_chain": boolFeature(ctx.Execution.ShellInChain),
+		"execution.curl_wget_in_chain": boolFeature(ctx.Execution.CurlWgetInChain),
+		"execution.interpreter_in_chain": boolFeature(ctx.Execution.InterpreterInChain),
+		"execution.container_runtime_in_chain": boolFeature(ctx.Execution.ContainerRuntimeInChain),
+		"execution.memfd_or_deleted_exec": boolFeature(ctx.Execution.MemfdOrDeletedExec),
+		"capability.has_dangerous_caps":      boolFeature(ctx.Capability.HasDangerousCaps),
 		"capability.dangerous_count": numberFeature(float64(len(ctx.Capability.DangerousCaps))),
-		"capability.seccomp_disabled": boolFeature(!ctx.Capability.CapabilityUnknown && !ctx.Capability.SeccompEnabled),
+		"capability.seccomp_disabled": boolFeature(!ctx.Capability.CapabilityUnknown && ctx.Capability.SeccompDisabled),
 		"history.connect_then_exec":   boolFeature(ctx.History.ConnectThenExec),
-		"history.sensitive_then_network": boolFeature(ctx.History.SensitiveFileThenNet),
+		"history.sensitive_then_network": boolFeature(ctx.History.SensitiveThenNetwork),
+		"history.sensitive_then_execve": boolFeature(ctx.History.SensitiveThenExecve),
+		"history.burst_connect": boolFeature(ctx.History.BurstConnect),
+		"history.burst_exec": boolFeature(ctx.History.BurstExec),
+		"history.unique_open_path_count": numberFeature(float64(ctx.History.UniqueOpenPathCount)),
+		"file.write_then_exec_same_path": boolFeature(ctx.File.WriteThenExecSamePath),
+		"file.opened_deleted_path": boolFeature(ctx.File.OpenedDeletedPath),
 		"history.exec_count":             numberFeature(float64(ctx.History.ExecCount)),
 		"history.open_count":             numberFeature(float64(ctx.History.OpenCount)),
 		"history.connect_count":          numberFeature(float64(ctx.History.ConnectCount)),

@@ -38,6 +38,8 @@ type Event struct {
 	Comm string
 	Path string
 	Args []string
+	Flags uint32
+	Mode  uint32
 
 	Addr string
 	Port uint16

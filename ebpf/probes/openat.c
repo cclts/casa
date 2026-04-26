@@ -26,6 +26,8 @@ int handle_openat(struct trace_event_raw_sys_enter *ctx) {
 
     const char *filename = (const char *)ctx->args[1];
     bpf_probe_read_user_str(e->filename, sizeof(e->filename), filename);
+    e->flags = (__u32)ctx->args[2];
+    e->mode = (__u32)ctx->args[3];
 
     bpf_ringbuf_submit(e, 0);
     return 0;
