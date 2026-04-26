@@ -1,6 +1,18 @@
-CLANG := clang
-BPFTOOL := bpftool
+CLANG ?= clang
+BPFTOOL ?= bpftool
+GO ?= go
+
+UNAME_M := $(shell uname -m)
+
+ifeq ($(UNAME_M),x86_64)
+ARCH := x86
+else ifeq ($(UNAME_M),aarch64)
 ARCH := arm64
+else ifeq ($(UNAME_M),arm64)
+ARCH := arm64
+else
+$(error Unsupported architecture: $(UNAME_M))
+endif
 
 EBPF_DIR := ebpf
 EBPF_PROBES_DIR := $(EBPF_DIR)/probes
@@ -8,39 +20,55 @@ EBPF_HEADERS_DIR := $(EBPF_DIR)/headers
 EBPF_BUILD_DIR := $(EBPF_DIR)/build
 
 VMLINUX_H := $(EBPF_HEADERS_DIR)/vmlinux.h
-C_SOURCES := $(wildcard $(EBPF_PROBES_DIR)/*.c)
-BPF_OBJECTS := $(patsubst $(EBPF_PROBES_DIR)/%.c,$(EBPF_BUILD_DIR)/%.o,$(C_SOURCES))
-
 BPF_FINAL := $(EBPF_BUILD_DIR)/probes.o
+
+USER_DIR := user
+GO_APP := $(USER_DIR)/app
+GO_MAIN := ./cmd/main.go
 
 BPF_CFLAGS := -O2 -g -target bpf -D__TARGET_ARCH_$(ARCH) -I$(EBPF_HEADERS_DIR)
 
-.PHONY: all vmlinux ebpf build run clean
+.PHONY: all setup check-deps vmlinux ebpf build run clean distclean
 
-all: vmlinux ebpf build
+all: check-deps vmlinux ebpf build
+
+setup:
+	./setup.sh
+
+check-deps:
+	@command -v $(CLANG) >/dev/null || (echo "missing clang"; exit 1)
+	@command -v $(BPFTOOL) >/dev/null || (echo "missing bpftool"; exit 1)
+	@command -v $(GO) >/dev/null || (echo "missing go"; exit 1)
+	@test -r /sys/kernel/btf/vmlinux || (echo "missing /sys/kernel/btf/vmlinux"; exit 1)
 
 vmlinux: $(VMLINUX_H)
 
 $(VMLINUX_H):
 	@mkdir -p $(EBPF_HEADERS_DIR)
-	@echo "Generating vmlinux.h..."
+	@echo "[+] Generating vmlinux.h"
 	@$(BPFTOOL) btf dump file /sys/kernel/btf/vmlinux format c > $(VMLINUX_H)
 
 ebpf: $(BPF_FINAL)
 
 $(BPF_FINAL): $(EBPF_PROBES_DIR)/main.c $(VMLINUX_H)
 	@mkdir -p $(EBPF_BUILD_DIR)
-	@echo "Compiling merged BPF object..."
+	@echo "[+] Compiling merged BPF object for $(ARCH)"
 	$(CLANG) $(BPF_CFLAGS) -c $< -o $@
 
 build:
-	@echo "Building Go application..."
-	go build -o user/app ./user/cmd/main.go
+	@echo "[+] Building Go application"
+	cd $(USER_DIR) && $(GO) mod tidy
+	cd $(USER_DIR) && $(GO) build -o app $(GO_MAIN)
 
 run: all
-	@echo "Running application..."
-	sudo ./user/app
+	@echo "[+] Running application ..."
+	sudo ./$(GO_APP)
 
 clean:
-	@echo "Cleaning up..."
+	@echo "[+] Cleaning build artifacts"
 	rm -rf $(EBPF_BUILD_DIR)
+	rm -f $(GO_APP)
+
+distclean: clean
+	@echo "[+] Removing generated headers"
+	rm -f $(VMLINUX_H)

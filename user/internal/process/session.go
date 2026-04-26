@@ -19,21 +19,6 @@ type Session struct {
 	LastSeen  time.Time
 	ClosedAt  time.Time
 	IsClosed  bool
-
-	MaxLineageDepth int
-	Counts          EventCounts
-	UniqueConnectEndpoints []Endpoint
-}
-
-type EventCounts struct {
-	Execs    int
-	Opens    int
-	Connects int
-}
-
-type Endpoint struct {
-	Addr string
-	Port uint16
 }
 
 // SessionTracker maps observed pids back to the worker process that owns the session.
@@ -85,19 +70,15 @@ func (st *SessionTracker) ResolveSession(pid uint32, eventTime time.Time, maxDep
 	sess, ok := st.sessions[sessionPID]
 	if !ok {
 		sess = &Session{
-			ID:              SessionID(sessionPID),
-			SessionPID:      sessionPID,
-			Processes:       make(map[uint32]struct{}),
-			UniqueConnectEndpoints: make([]Endpoint, 0, 8),
-			CreatedAt:       eventTime,
+			ID:         SessionID(sessionPID),
+			SessionPID: sessionPID,
+			Processes:  make(map[uint32]struct{}),
+			CreatedAt:  eventTime,
 		}
 		st.sessions[sessionPID] = sess
 	}
 
 	sess.LastSeen = eventTime
-	if depth := len(lineage.Nodes) - 1; depth > sess.MaxLineageDepth {
-		sess.MaxLineageDepth = depth
-	}
 
 	// add nodes to session
 	for _, n := range lineage.Nodes {

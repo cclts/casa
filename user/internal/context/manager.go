@@ -11,14 +11,14 @@ import (
 // Manager owns the mutable session state used to build context snapshots over time.
 type Manager struct {
 	mu               sync.Mutex
-	sessions         map[uint32]*SessionRecord
+	sessions         map[uint32]*SessionState
 	recentEventLimit int
 }
 
 // NewManager creates the in-memory session store used by context generation.
 func NewManager() *Manager {
 	return &Manager{
-		sessions:         make(map[uint32]*SessionRecord),
+		sessions:         make(map[uint32]*SessionState),
 		recentEventLimit: defaultRecentEventLimit,
 	}
 }
@@ -36,7 +36,7 @@ func (m *Manager) ObserveAndBuild(
 
 	session, ok := m.sessions[sessionID]
 	if !ok {
-		session = newSessionRecord(sessionID, e.Time)
+		session = newSessionState(sessionID, e.Time)
 		m.sessions[sessionID] = session
 	}
 
@@ -72,8 +72,10 @@ func (m *Manager) ObserveAndBuild(
 		procRecord.OpenCount++
 		session.Counts.Opens++
 		procRecord.Opens = append(procRecord.Opens, ObservedOpen{
-			Path: e.Path,
-			Time: e.Time,
+			Path:  e.Path,
+			Flags: e.Flags,
+			Mode:  e.Mode,
+			Time:  e.Time,
 		})
 		procRecord.Opens = trimOpenEvents(procRecord.Opens)
 	case event.EventConnect:
@@ -104,13 +106,15 @@ func (m *Manager) ObserveAndBuild(
 		Type: e.Type,
 		PID:  e.PID,
 		Path: e.Path,
+		Flags: e.Flags,
+		Mode: e.Mode,
 		Addr: e.Addr,
 		Port: e.Port,
 		Time: e.Time,
 	})
 	session.RecentEvents = trimRecentEvents(session.RecentEvents, m.recentEventLimit)
 
-	return Build(session, e.PID)
+	return BuildContext(session, e.PID)
 }
 
 // rebuildLineage converts the process package's lineage model into the context-local shape.

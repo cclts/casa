@@ -47,36 +47,6 @@ func Run(events <-chan event.Event, decisionEngine *decision.Engine, auditMonito
 		if !ok {
 			continue
 		}
-		switch e.Type {
-		case event.EventExecve:
-			sess.Counts.Execs++
-		case event.EventOpenat:
-			sess.Counts.Opens++
-		case event.EventConnect:
-			sess.Counts.Connects++
-			endpoint := process.Endpoint{
-				Addr: e.Addr,
-				Port: e.Port,
-			}
-			exists := false
-			for _, item := range sess.UniqueConnectEndpoints {
-				if item == endpoint {
-					exists = true
-					break
-				}
-			}
-			if !exists {
-				sess.UniqueConnectEndpoints = append(sess.UniqueConnectEndpoints, endpoint)
-				if len(sess.UniqueConnectEndpoints) > 16 {
-					sess.UniqueConnectEndpoints = sess.UniqueConnectEndpoints[len(sess.UniqueConnectEndpoints)-16:]
-				}
-			}
-		case event.EventExit:
-			if e.PID == sess.SessionPID {
-				sess.IsClosed = true
-				sess.ClosedAt = e.Time
-			}
-		}
 
 		if e.Type != event.EventExit {
 			securityStore.Ensure(e.PID)
@@ -101,7 +71,7 @@ func Run(events <-chan event.Event, decisionEngine *decision.Engine, auditMonito
 			}
 
 		case event.EventOpenat:
-			log.Printf("  ➤ Open: %s", e.Path)
+			log.Printf("  ➤ Open: %s flags=0x%x mode=0%o", e.Path, e.Flags, e.Mode)
 		case event.EventConnect:
 			log.Printf("  ➤ Connect: %s:%d", e.Addr, e.Port)
 		case event.EventExit:
@@ -121,19 +91,27 @@ func Run(events <-chan event.Event, decisionEngine *decision.Engine, auditMonito
 			ctx.Execution.BinaryPath,
 			ctx.Execution.UID,
 			ctx.Execution.ChainDepth,
-			ctx.Execution.SuspiciousPath,
+			ctx.Execution.SuspiciousPathExec,
 		)
 		log.Printf("  • Context Caps: danger=%v seccomp_enabled=%v unknown=%v",
 			ctx.Capability.DangerousCaps,
-			ctx.Capability.SeccompEnabled,
+			!ctx.Capability.SeccompDisabled,
 			ctx.Capability.CapabilityUnknown,
 		)
-		log.Printf("  • Context History: exec=%d open=%d connect=%d connect_then_exec=%v sensitive_then_net=%v",
+		log.Printf("  • Context History: exec=%d open=%d connect=%d connect_then_exec=%v sensitive_then_net=%v sensitive_then_execve=%v burst_connect=%v burst_exec=%v unique_open_paths=%d",
 			ctx.History.ExecCount,
 			ctx.History.OpenCount,
 			ctx.History.ConnectCount,
 			ctx.History.ConnectThenExec,
-			ctx.History.SensitiveFileThenNet,
+			ctx.History.SensitiveThenNetwork,
+			ctx.History.SensitiveThenExecve,
+			ctx.History.BurstConnect,
+			ctx.History.BurstExec,
+			ctx.History.UniqueOpenPathCount,
+		)
+		log.Printf("  • Context File: write_then_exec_same_path=%v opened_deleted_path=%v",
+			ctx.File.WriteThenExecSamePath,
+			ctx.File.OpenedDeletedPath,
 		)
 		log.Printf("  • Decision: action=%s score=%d thresholds(log=%d alert=%d) rules=%v",
 			result.Action,

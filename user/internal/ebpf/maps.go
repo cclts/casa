@@ -8,6 +8,8 @@ type Event struct {
 	Uid      uint32
 	Type     uint32
 	Argc     uint32
+	Flags    uint32
+	Mode     uint32
 	TsNS     uint64
 	Comm     [16]byte
 	Filename [128]byte

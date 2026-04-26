@@ -48,6 +48,8 @@ type EventRecord struct {
 	Comm string   `json:"comm"`
 	Path string   `json:"path,omitempty"`
 	Args []string `json:"args,omitempty"`
+	Flags uint32  `json:"flags,omitempty"`
+	Mode  uint32  `json:"mode,omitempty"`
 	Addr string   `json:"addr,omitempty"`
 	Port uint16   `json:"port,omitempty"`
 }
@@ -165,6 +167,8 @@ func (m *Monitor) Record(e event.Event, ctx context.Context, result decision.Res
 			Comm: e.Comm,
 			Path: e.Path,
 			Args: append([]string(nil), e.Args...),
+			Flags: e.Flags,
+			Mode:  e.Mode,
 			Addr: e.Addr,
 			Port: e.Port,
 		},
