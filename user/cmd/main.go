@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"os"
 	"os/signal"
@@ -21,6 +22,7 @@ type Config struct {
 	LogPath   string
 	AlertPath string
 	BPFPath   string
+	PIDPath   string
 	BufSize   int
 }
 
@@ -29,6 +31,15 @@ func main() {
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+
+	if err := writePIDFile(cfg.PIDPath); err != nil {
+		log.Fatalf("write pid file: %v", err)
+	}
+	defer func() {
+		if err := os.Remove(cfg.PIDPath); err != nil && !os.IsNotExist(err) {
+			log.Printf("remove pid file failed: %v", err)
+		}
+	}()
 
 	ruleEngine, err := rules.NewEngine(cfg.RulePath)
 	if err != nil {
@@ -121,6 +132,7 @@ func loadConfig() Config {
 		LogPath:   getenv("CASA_AUDIT_LOG_PATH", "user/logs/audit.log"),
 		AlertPath: getenv("CASA_ALERT_LOG_PATH", "user/logs/alert.log"),
 		BPFPath:   getenv("CASA_BPF_PATH", "ebpf/build/probes.o"),
+		PIDPath:   getenv("CASA_PID_PATH", "/var/run/casa.pid"),
 		BufSize:   500,
 	}
 }
@@ -130,6 +142,11 @@ func getenv(key, fallback string) string {
 		return v
 	}
 	return fallback
+}
+
+func writePIDFile(path string) error {
+	pid := os.Getpid()
+	return os.WriteFile(path, []byte(fmt.Sprintf("%d\n", pid)), 0o644)
 }
 
 func setupReload(engine *decision.Engine, rulePath string) func() {

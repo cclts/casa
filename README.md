@@ -27,7 +27,7 @@ CASA_RULES_PATH=/path/to/rules.json make run
 
 reload rules after editing:
 ```bash
-kill -HUP <casa-go-pid>
+kill -HUP $(cat /var/run/casa.pid)
 ```
 
 rules are evaluated in 3 layers:
