@@ -38,12 +38,20 @@ type Monitor struct {
 
 // EventLogRecord is the JSONL payload written for every observed event.
 type EventLogRecord struct {
-	Timestamp string          `json:"timestamp"`
-	SessionID uint32          `json:"session_id"`
-	TargetPID uint32          `json:"target_pid"`
-	Event     EventRecord     `json:"event"`
-	Context   context.Context `json:"context"`
-	Decision  DecisionRecord  `json:"decision"`
+	Timestamp string   `json:"timestamp"`
+	SessionID uint32   `json:"session_id"`
+	PID       uint32   `json:"pid"`
+	PPID      uint32   `json:"ppid"`
+	UID       uint32   `json:"uid"`
+	Type      string   `json:"type"`
+	Comm      string   `json:"comm"`
+	Path      string   `json:"path,omitempty"`
+	Args      []string `json:"args,omitempty"`
+	Flags     uint32   `json:"flags,omitempty"`
+	Mode      uint32   `json:"mode,omitempty"`
+	Addr      string   `json:"addr,omitempty"`
+	Port      uint16   `json:"port,omitempty"`
+	Depth     int      `json:"depth,omitempty"`
 }
 
 // SessionLogRecord is the JSONL payload written for session-level snapshots.
@@ -218,10 +226,18 @@ func (m *Monitor) Record(e event.Event, ctx context.Context, result decision.Res
 	eventRecord := EventLogRecord{
 		Timestamp: e.TimeHuman,
 		SessionID: ctx.SessionID,
-		TargetPID: ctx.TargetPID,
-		Event:     buildEventRecord(e),
-		Context:   ctx,
-		Decision:  buildDecisionRecord(result),
+		PID:       e.PID,
+		PPID:      e.PPID,
+		UID:       e.UID,
+		Type:      e.Type.String(),
+		Comm:      e.Comm,
+		Path:      e.Path,
+		Args:      append([]string(nil), e.Args...),
+		Flags:     e.Flags,
+		Mode:      e.Mode,
+		Addr:      e.Addr,
+		Port:      e.Port,
+		Depth:     ctx.Execution.ChainDepth,
 	}
 
 	if err := m.writeJSONL(m.eventFile, eventRecord, "event log"); err != nil {
