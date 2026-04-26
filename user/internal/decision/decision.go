@@ -18,7 +18,7 @@ const (
 type Profile struct {
 	SessionID uint32
 	TargetPID uint32
-	Features  map[string]rules.FeatureValue
+	Features  map[string]any
 }
 
 // Result is the final decision payload emitted after risk evaluation.
@@ -79,52 +79,44 @@ func (e *Engine) Reload() error {
 
 // BuildProfile converts rich context into a flat feature map that rules can score.
 func BuildProfile(ctx context.Context, _ int) Profile {
-	features := map[string]rules.FeatureValue{
-		"execution.suspicious_path_exec": boolFeature(ctx.Execution.SuspiciousPathExec),
-		"execution.chain_depth":     numberFeature(float64(ctx.Execution.ChainDepth)),
-		"execution.deep_chain":      boolFeature(ctx.Execution.DeepChain),
-		"execution.shell_in_chain": boolFeature(ctx.Execution.ShellInChain),
-		"execution.curl_wget_in_chain": boolFeature(ctx.Execution.CurlWgetInChain),
-		"execution.interpreter_in_chain": boolFeature(ctx.Execution.InterpreterInChain),
-		"execution.container_runtime_in_chain": boolFeature(ctx.Execution.ContainerRuntimeInChain),
-		"execution.memfd_or_deleted_exec": boolFeature(ctx.Execution.MemfdOrDeletedExec),
-		"capability.has_dangerous_caps":      boolFeature(ctx.Capability.HasDangerousCaps),
-		"capability.dangerous_count": numberFeature(float64(len(ctx.Capability.DangerousCaps))),
-		"capability.seccomp_disabled": boolFeature(!ctx.Capability.CapabilityUnknown && ctx.Capability.SeccompDisabled),
-		"history.connect_then_exec":   boolFeature(ctx.History.ConnectThenExec),
-		"history.sensitive_then_network": boolFeature(ctx.History.SensitiveThenNetwork),
-		"history.sensitive_then_execve": boolFeature(ctx.History.SensitiveThenExecve),
-		"history.burst_connect": boolFeature(ctx.History.BurstConnect),
-		"history.burst_exec": boolFeature(ctx.History.BurstExec),
-		"history.unique_open_path_count": numberFeature(float64(ctx.History.UniqueOpenPathCount)),
-		"file.write_then_exec_same_path": boolFeature(ctx.File.WriteThenExecSamePath),
-		"file.opened_deleted_path": boolFeature(ctx.File.OpenedDeletedPath),
-		"history.exec_count":             numberFeature(float64(ctx.History.ExecCount)),
-		"history.open_count":             numberFeature(float64(ctx.History.OpenCount)),
-		"history.connect_count":          numberFeature(float64(ctx.History.ConnectCount)),
+	features := map[string]any{
+		"session_id": int64(ctx.SessionID),
+		"target_pid": int64(ctx.TargetPID),
+		"execution": map[string]any{
+			"suspicious_path_exec":      ctx.Execution.SuspiciousPathExec,
+			"chain_depth":               int64(ctx.Execution.ChainDepth),
+			"deep_chain":                ctx.Execution.DeepChain,
+			"shell_in_chain":            ctx.Execution.ShellInChain,
+			"curl_wget_in_chain":        ctx.Execution.CurlWgetInChain,
+			"interpreter_in_chain":      ctx.Execution.InterpreterInChain,
+			"container_runtime_in_chain": ctx.Execution.ContainerRuntimeInChain,
+			"memfd_or_deleted_exec":     ctx.Execution.MemfdOrDeletedExec,
+		},
+		"capability": map[string]any{
+			"has_dangerous_caps": ctx.Capability.HasDangerousCaps,
+			"dangerous_count":    int64(len(ctx.Capability.DangerousCaps)),
+			"seccomp_disabled":   !ctx.Capability.CapabilityUnknown && ctx.Capability.SeccompDisabled,
+		},
+		"history": map[string]any{
+			"connect_then_exec":     ctx.History.ConnectThenExec,
+			"sensitive_then_network": ctx.History.SensitiveThenNetwork,
+			"sensitive_then_execve": ctx.History.SensitiveThenExecve,
+			"burst_connect":         ctx.History.BurstConnect,
+			"burst_exec":            ctx.History.BurstExec,
+			"unique_open_path_count": int64(ctx.History.UniqueOpenPathCount),
+			"exec_count":            int64(ctx.History.ExecCount),
+			"open_count":            int64(ctx.History.OpenCount),
+			"connect_count":         int64(ctx.History.ConnectCount),
+		},
+		"file": map[string]any{
+			"write_then_exec_same_path": ctx.File.WriteThenExecSamePath,
+			"opened_deleted_path":       ctx.File.OpenedDeletedPath,
+		},
 	}
 
 	return Profile{
 		SessionID: ctx.SessionID,
 		TargetPID: ctx.TargetPID,
 		Features:  features,
-	}
-}
-
-// boolFeature wraps a boolean observation in the shared rule-engine feature format.
-func boolFeature(v bool) rules.FeatureValue {
-	return rules.FeatureValue{
-		Bool:    v,
-		Number:  0,
-		Present: true,
-	}
-}
-
-// numberFeature wraps a numeric observation in the shared rule-engine feature format.
-func numberFeature(v float64) rules.FeatureValue {
-	return rules.FeatureValue{
-		Bool:    false,
-		Number:  v,
-		Present: true,
 	}
 }

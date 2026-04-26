@@ -5,20 +5,15 @@ import (
 	"fmt"
 	"os"
 	"sync"
-)
 
-// FeatureValue is the flat rule-engine input format used by scoring.
-type FeatureValue struct {
-	Bool    bool
-	Number  float64
-	Present bool
-}
+	"github.com/google/cel-go/cel"
+)
 
 // Config is the on-disk JSON schema for thresholds and weighted rules.
 type Config struct {
 	Analysis   AnalysisConfig `json:"analysis"`
-	Thresholds Thresholds `json:"thresholds"`
-	Rules      []Rule     `json:"rules"`
+	Thresholds Thresholds     `json:"thresholds"`
+	Rules      []Rule         `json:"rules"`
 }
 
 // AnalysisConfig holds non-rule knobs that still belong to the same policy source of truth.
@@ -36,19 +31,21 @@ type Thresholds struct {
 type Rule struct {
 	Name        string   `json:"name"`
 	Description string   `json:"description"`
+	Expr        string   `json:"expr"`
 	Feature     string   `json:"feature"`
 	Weight      int      `json:"weight"`
 	Enabled     bool     `json:"enabled"`
 	Match       string   `json:"match"`
 	MinValue    *float64 `json:"min_value,omitempty"`
+
+	program cel.Program `json:"-"`
 }
 
 // TriggeredRule captures the exact rules that contributed to the final score.
 type TriggeredRule struct {
-	Name    string
-	Feature string
-	Weight  int
-	Value   string
+	Name   string `json:"name"`
+	Expr   string `json:"expr,omitempty"`
+	Weight int    `json:"weight"`
 }
 
 // Engine owns the currently active rule configuration and supports hot reloads.
@@ -56,11 +53,27 @@ type Engine struct {
 	mu     sync.RWMutex
 	path   string
 	config Config
+	env    *cel.Env
 }
 
 // NewEngine loads the initial rule configuration from disk.
 func NewEngine(path string) (*Engine, error) {
-	engine := &Engine{path: path}
+	env, err := cel.NewEnv(
+		cel.Variable("execution", cel.DynType),
+		cel.Variable("capability", cel.DynType),
+		cel.Variable("history", cel.DynType),
+		cel.Variable("file", cel.DynType),
+		cel.Variable("session_id", cel.IntType),
+		cel.Variable("target_pid", cel.IntType),
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	engine := &Engine{
+		path: path,
+		env:  env,
+	}
 	if err := engine.Reload(); err != nil {
 		return nil, err
 	}
@@ -72,6 +85,24 @@ func (e *Engine) Reload() error {
 	cfg, err := LoadConfig(e.path)
 	if err != nil {
 		return err
+	}
+
+	for i := range cfg.Rules {
+		if !cfg.Rules[i].Enabled {
+			continue
+		}
+
+		ast, issues := e.env.Compile(cfg.Rules[i].Expr)
+		if issues != nil && issues.Err() != nil {
+			return fmt.Errorf("compile rule %q: %w", cfg.Rules[i].Name, issues.Err())
+		}
+
+		program, err := e.env.Program(ast)
+		if err != nil {
+			return fmt.Errorf("program rule %q: %w", cfg.Rules[i].Name, err)
+		}
+
+		cfg.Rules[i].program = program
 	}
 
 	e.mu.Lock()
@@ -90,7 +121,7 @@ func (e *Engine) ConfigSnapshot() Config {
 }
 
 // Evaluate applies all enabled rules and returns the accumulated score and matches.
-func (e *Engine) Evaluate(features map[string]FeatureValue) (int, []TriggeredRule, Thresholds) {
+func (e *Engine) Evaluate(features map[string]any) (int, []TriggeredRule, Thresholds) {
 	e.mu.RLock()
 	cfg := e.config
 	e.mu.RUnlock()
@@ -103,21 +134,21 @@ func (e *Engine) Evaluate(features map[string]FeatureValue) (int, []TriggeredRul
 			continue
 		}
 
-		feature, ok := features[rule.Feature]
-		if !ok || !feature.Present {
+		out, _, err := rule.program.Eval(features)
+		if err != nil {
 			continue
 		}
 
-		if !matches(rule, feature) {
+		matched, ok := out.Value().(bool)
+		if !ok || !matched {
 			continue
 		}
 
 		score += rule.Weight
 		triggered = append(triggered, TriggeredRule{
-			Name:    rule.Name,
-			Feature: rule.Feature,
-			Weight:  rule.Weight,
-			Value:   renderValue(feature),
+			Name:   rule.Name,
+			Expr:   rule.Expr,
+			Weight: rule.Weight,
 		})
 	}
 
@@ -144,7 +175,7 @@ func LoadConfig(path string) (Config, error) {
 }
 
 // Validate checks that thresholds and per-rule match settings are internally consistent.
-func (c Config) Validate() error {
+func (c *Config) Validate() error {
 	if c.Analysis.LineageMaxDepth <= 0 {
 		return fmt.Errorf("analysis.lineage_max_depth must be > 0")
 	}
@@ -159,46 +190,23 @@ func (c Config) Validate() error {
 		if rule.Name == "" {
 			return fmt.Errorf("rule[%d] missing name", i)
 		}
-		if rule.Feature == "" {
-			return fmt.Errorf("rule[%d] missing feature", i)
-		}
-		if rule.Match == "" {
-			c.Rules[i].Match = "bool_true"
-		}
-		switch rule.Match {
-		case "bool_true", "number_gte":
-		default:
-			return fmt.Errorf("rule[%d] invalid match mode %q", i, rule.Match)
-		}
-		if rule.Match == "number_gte" && rule.MinValue == nil {
-			return fmt.Errorf("rule[%d] number_gte requires min_value", i)
+		if rule.Expr == "" {
+			if rule.Feature == "" {
+				return fmt.Errorf("rule[%d] missing expr", i)
+			}
+			switch rule.Match {
+			case "", "bool_true":
+				c.Rules[i].Expr = rule.Feature
+			case "number_gte":
+				if rule.MinValue == nil {
+					return fmt.Errorf("rule[%d] number_gte requires min_value", i)
+				}
+				c.Rules[i].Expr = fmt.Sprintf("%s >= %v", rule.Feature, *rule.MinValue)
+			default:
+				return fmt.Errorf("rule[%d] invalid legacy match mode %q", i, rule.Match)
+			}
 		}
 	}
 
 	return nil
-}
-
-// matches evaluates one feature against one rule predicate.
-func matches(rule Rule, feature FeatureValue) bool {
-	match := rule.Match
-	if match == "" {
-		match = "bool_true"
-	}
-
-	switch match {
-	case "bool_true":
-		return feature.Bool
-	case "number_gte":
-		return rule.MinValue != nil && feature.Number >= *rule.MinValue
-	default:
-		return false
-	}
-}
-
-// renderValue stores a human-friendly copy of the matched feature value in audit output.
-func renderValue(feature FeatureValue) string {
-	if feature.Bool {
-		return "true"
-	}
-	return fmt.Sprintf("%.0f", feature.Number)
 }

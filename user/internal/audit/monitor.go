@@ -11,6 +11,7 @@ import (
 	"github.com/cclts/casa/user/internal/context"
 	"github.com/cclts/casa/user/internal/decision"
 	"github.com/cclts/casa/user/internal/event"
+	"github.com/cclts/casa/user/internal/rules"
 )
 
 // Monitor owns the append-only audit sinks used for routine logs and high-risk alerts.
@@ -56,11 +57,11 @@ type EventRecord struct {
 
 // DecisionRecord stores the scoring output that explains why a record was logged.
 type DecisionRecord struct {
-	Action         decision.Action `json:"action"`
-	Score          int             `json:"score"`
-	LogThreshold   int             `json:"log_threshold"`
-	AlertThreshold int             `json:"alert_threshold"`
-	Triggered      interface{}     `json:"triggered_rules"`
+	Action         decision.Action       `json:"action"`
+	Score          int                   `json:"score"`
+	LogThreshold   int                   `json:"log_threshold"`
+	AlertThreshold int                   `json:"alert_threshold"`
+	Triggered      []rules.TriggeredRule `json:"triggered_rules"`
 }
 
 // NewMonitor opens append-only audit and alert log files.
@@ -183,16 +184,19 @@ func (m *Monitor) Record(e event.Event, ctx context.Context, result decision.Res
 	}
 
 	m.mu.Lock()
-	defer m.mu.Unlock()
-
 	if m.writerErr != nil {
-		return m.writerErr
+		err := m.writerErr
+		m.mu.Unlock()
+		return err
 	}
 	if m.closed {
+		m.mu.Unlock()
 		return errors.New("audit monitor is closed")
 	}
+	queue := m.queue
+	m.mu.Unlock()
 
-	m.queue <- queuedRecord{
+	queue <- queuedRecord{
 		record:  record,
 		isAlert: result.Action == decision.ActionAlert,
 	}

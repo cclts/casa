@@ -117,7 +117,7 @@ func main() {
 
 func loadConfig() Config {
 	return Config{
-		RulePath:  getenv("CASA_RULES_PATH", "user/config/risk_rules.json"),
+		RulePath:  getenv("CASA_RULES_PATH", "user/config/rules.json"),
 		LogPath:   getenv("CASA_AUDIT_LOG_PATH", "user/logs/audit.log"),
 		AlertPath: getenv("CASA_ALERT_LOG_PATH", "user/logs/alert.log"),
 		BPFPath:   getenv("CASA_BPF_PATH", "ebpf/build/probes.o"),
