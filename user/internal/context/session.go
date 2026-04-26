@@ -3,8 +3,8 @@ package context
 import (
 	"time"
 
-	"github.com/cclts/care-go/user/internal/event"
-	"github.com/cclts/care-go/user/internal/process"
+	"github.com/cclts/casa/user/internal/event"
+	"github.com/cclts/casa/user/internal/process"
 )
 
 // SessionState is the in-memory aggregation unit that holds process state and recent history.

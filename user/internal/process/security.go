@@ -3,7 +3,7 @@ package process
 import (
 	"sync"
 
-	"github.com/cclts/care-go/user/internal/proc"
+	"github.com/cclts/casa/user/internal/proc"
 )
 
 // SecuritySnapshot caches the last known security posture for a tracked pid.

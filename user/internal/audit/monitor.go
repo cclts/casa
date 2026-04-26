@@ -8,9 +8,9 @@ import (
 	"path/filepath"
 	"sync"
 
-	"github.com/cclts/care-go/user/internal/context"
-	"github.com/cclts/care-go/user/internal/decision"
-	"github.com/cclts/care-go/user/internal/event"
+	"github.com/cclts/casa/user/internal/context"
+	"github.com/cclts/casa/user/internal/decision"
+	"github.com/cclts/casa/user/internal/event"
 )
 
 // Monitor owns the append-only audit sinks used for routine logs and high-risk alerts.

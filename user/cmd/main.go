@@ -8,12 +8,12 @@ import (
 	"sync"
 	"syscall"
 
-	"github.com/cclts/care-go/user/internal/audit"
-	"github.com/cclts/care-go/user/internal/decision"
-	"github.com/cclts/care-go/user/internal/ebpf"
-	"github.com/cclts/care-go/user/internal/event"
-	"github.com/cclts/care-go/user/internal/pipeline"
-	"github.com/cclts/care-go/user/internal/rules"
+	"github.com/cclts/casa/user/internal/audit"
+	"github.com/cclts/casa/user/internal/decision"
+	"github.com/cclts/casa/user/internal/ebpf"
+	"github.com/cclts/casa/user/internal/event"
+	"github.com/cclts/casa/user/internal/pipeline"
+	"github.com/cclts/casa/user/internal/rules"
 )
 
 type Config struct {

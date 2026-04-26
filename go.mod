@@ -1,4 +1,4 @@
-module github.com/cclts/care-go
+module github.com/cclts/casa
 
 go 1.24.0
 

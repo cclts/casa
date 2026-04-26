@@ -3,7 +3,7 @@ package process
 import (
 	"log"
 
-	"github.com/cclts/care-go/user/internal/proc"
+	"github.com/cclts/casa/user/internal/proc"
 )
 
 // Node is a single point in the ancestry chain used for lineage reporting.

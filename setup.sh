@@ -2,7 +2,7 @@
 set -euo pipefail
 
 GO_VERSION="1.22.5"
-MODULE_NAME="github.com/cclts/care-go" 
+MODULE_NAME="github.com/cclts/casa" 
 REQUIRED_PKGS=(
   build-essential clang llvm libelf-dev libbpf-dev 
   linux-headers-$(uname -r) bpftool make git curl wget pkg-config

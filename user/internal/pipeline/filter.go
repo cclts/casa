@@ -3,7 +3,7 @@ package pipeline
 import (
 	"bytes"
 
-	"github.com/cclts/care-go/user/internal/ebpf"
+	"github.com/cclts/casa/user/internal/ebpf"
 )
 
 // blackList suppresses noisy commands that are not useful for the current analysis flow.

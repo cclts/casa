@@ -12,6 +12,7 @@ ebpf/headers/vmlinux.h
 
 # logs
 user/logs/
+.log
 
 # OS junk
 .DS_Store

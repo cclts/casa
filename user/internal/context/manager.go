@@ -4,8 +4,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/cclts/care-go/user/internal/event"
-	"github.com/cclts/care-go/user/internal/process"
+	"github.com/cclts/casa/user/internal/event"
+	"github.com/cclts/casa/user/internal/process"
 )
 
 // Manager owns the mutable session state used to build context snapshots over time.

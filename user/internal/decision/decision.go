@@ -1,8 +1,8 @@
 package decision
 
 import (
-	"github.com/cclts/care-go/user/internal/context"
-	"github.com/cclts/care-go/user/internal/rules"
+	"github.com/cclts/casa/user/internal/context"
+	"github.com/cclts/casa/user/internal/rules"
 )
 
 // Action is the coarse-grained outcome of risk evaluation.

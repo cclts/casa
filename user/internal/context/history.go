@@ -1,7 +1,7 @@
 package context
 
 import (
-	"github.com/cclts/care-go/user/internal/event"
+	"github.com/cclts/casa/user/internal/event"
 )
 
 // buildHistoricalContext summarizes the recent syscall history observed for the process.

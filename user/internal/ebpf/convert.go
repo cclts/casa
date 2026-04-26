@@ -5,8 +5,8 @@ import (
 	"net"
 	"time"
 
-	"github.com/cclts/care-go/user/internal/event"
-	"github.com/cclts/care-go/user/internal/proc"
+	"github.com/cclts/casa/user/internal/event"
+	"github.com/cclts/casa/user/internal/proc"
 )
 
 // ToEvent converts the fixed-width ring buffer payload into the internal event model.

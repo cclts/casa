@@ -4,11 +4,11 @@ import (
 	"log"
 	"strings"
 
-	"github.com/cclts/care-go/user/internal/audit"
-	"github.com/cclts/care-go/user/internal/context"
-	"github.com/cclts/care-go/user/internal/decision"
-	"github.com/cclts/care-go/user/internal/event"
-	"github.com/cclts/care-go/user/internal/process"
+	"github.com/cclts/casa/user/internal/audit"
+	"github.com/cclts/casa/user/internal/context"
+	"github.com/cclts/casa/user/internal/decision"
+	"github.com/cclts/casa/user/internal/event"
+	"github.com/cclts/casa/user/internal/process"
 )
 
 // Run is the main user-space analysis loop. It enriches events with process state,
