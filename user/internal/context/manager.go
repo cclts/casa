@@ -48,7 +48,9 @@ func (m *Manager) ObserveAndBuild(
 	procRecord := session.getOrCreateProcess(e.PID, e.Time)
 	procRecord.PPID = e.PPID
 	procRecord.UID = e.UID
-	procRecord.Comm = e.Comm
+	if procRecord.Comm == "" {
+		procRecord.Comm = e.Comm
+	}
 	procRecord.LineageDepth = depth
 	procRecord.LastSeen = e.Time
 	procRecord.Lineage = rebuildLineage(lineage)
@@ -65,6 +67,7 @@ func (m *Manager) ObserveAndBuild(
 	switch e.Type {
 	case event.EventExecve:
 		procRecord.ExecPath = e.Path
+		procRecord.Comm = basenameFromPath(e.Path)
 		procRecord.Args = append([]string(nil), e.Args...)
 		procRecord.ExecCount++
 		session.Counts.Execs++
@@ -103,14 +106,14 @@ func (m *Manager) ObserveAndBuild(
 	}
 
 	session.RecentEvents = append(session.RecentEvents, ObservedEvent{
-		Type: e.Type,
-		PID:  e.PID,
-		Path: e.Path,
+		Type:  e.Type,
+		PID:   e.PID,
+		Path:  e.Path,
 		Flags: e.Flags,
-		Mode: e.Mode,
-		Addr: e.Addr,
-		Port: e.Port,
-		Time: e.Time,
+		Mode:  e.Mode,
+		Addr:  e.Addr,
+		Port:  e.Port,
+		Time:  e.Time,
 	})
 	session.RecentEvents = trimRecentEvents(session.RecentEvents, m.recentEventLimit)
 

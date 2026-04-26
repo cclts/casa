@@ -3,7 +3,7 @@
     "lineage_max_depth": 4
   },
   "thresholds": {
-    "log": 5,
+    "log": 0,
     "alert": 10
   },
   "rules": [

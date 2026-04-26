@@ -167,3 +167,11 @@ func openHasWriteIntent(flags uint32) bool {
 		flags&oTRUNC != 0 ||
 		flags&oAPPEND != 0
 }
+
+func basenameFromPath(path string) string {
+	if path == "" {
+		return ""
+	}
+	parts := strings.Split(path, "/")
+	return parts[len(parts)-1]
+}
