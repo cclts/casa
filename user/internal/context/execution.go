@@ -19,7 +19,7 @@ func buildExecutionChainContext(procState *ProcessState) ExecutionContext {
 		SuspiciousPathExec:      isSuspiciousPath(procState.ExecPath),
 		DeepChain:               procState.LineageDepth >= deepChainThreshold,
 		ShellInChain:            lineageHasCommand(lineage, shellNames),
-		CurlWgetInChain:         lineageHasCommand(lineage, curlWgetNames),
+		NewtorkToolInChain:      lineageHasCommand(lineage, networkToolNames),
 		InterpreterInChain:      lineageHasCommand(lineage, interpreterNames),
 		ContainerRuntimeInChain: lineageHasCommand(lineage, containerRuntimeNames),
 		MemfdOrDeletedExec:      isMemfdOrDeletedPath(procState.ExecPath),
