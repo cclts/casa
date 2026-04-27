@@ -41,7 +41,6 @@ func snapshotSessionRecord(session *sessionAggregate) SessionRecord {
 		MaxScore:               session.MaxScore,
 		AlertTriggered:         session.AlertTriggered,
 		FinalDecision:          session.FinalDecision,
-		TriggeredRules:         append([]rules.TriggeredRule(nil), session.TriggeredRules...),
 	}
 	if !session.ClosedAt.IsZero() {
 		record.ClosedAt = formatTimestamp(session.ClosedAt)

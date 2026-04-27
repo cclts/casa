@@ -1,6 +1,7 @@
 package audit
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -8,13 +9,14 @@ import (
 )
 
 func writeJSONL(file *os.File, payload any, label string) error {
-	line, err := json.Marshal(payload)
-	if err != nil {
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
+	enc.SetEscapeHTML(false)
+	if err := enc.Encode(payload); err != nil {
 		return err
 	}
-	line = append(line, '\n')
 
-	if _, err := file.Write(line); err != nil {
+	if _, err := file.Write(buf.Bytes()); err != nil {
 		return fmt.Errorf("write %s: %w", label, err)
 	}
 

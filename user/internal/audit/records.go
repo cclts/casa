@@ -36,16 +36,15 @@ type SessionLogRecord struct {
 
 // SessionRecord stores the monitor's current view of a session.
 type SessionRecord struct {
-	CreatedAt              string                `json:"created_at"`
-	UpdatedAt              string                `json:"updated_at"`
-	ClosedAt               string                `json:"closed_at,omitempty"`
-	IsClosed               bool                  `json:"is_closed"`
-	EventCounts            context.EventCounts   `json:"event_counts"`
-	UniqueConnectEndpoints []context.Endpoint    `json:"unique_connect_endpoints"`
-	MaxScore               int                   `json:"max_score"`
-	AlertTriggered         bool                  `json:"alert_triggered"`
-	FinalDecision          DecisionRecord        `json:"final_decision"`
-	TriggeredRules         []rules.TriggeredRule `json:"triggered_rules"`
+	CreatedAt              string              `json:"created_at"`
+	UpdatedAt              string              `json:"updated_at"`
+	ClosedAt               string              `json:"closed_at,omitempty"`
+	IsClosed               bool                `json:"is_closed"`
+	EventCounts            context.EventCounts `json:"event_counts"`
+	UniqueConnectEndpoints []context.Endpoint  `json:"unique_connect_endpoints"`
+	MaxScore               int                 `json:"max_score"`
+	AlertTriggered         bool                `json:"alert_triggered"`
+	FinalDecision          DecisionRecord      `json:"final_decision"`
 }
 
 // EventRecord stores the normalized event fields that triggered evaluation.
