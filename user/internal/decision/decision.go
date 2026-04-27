@@ -92,7 +92,7 @@ func BuildProfile(ctx context.Context, _ int) Profile {
 			"chain_depth":               int64(ctx.Execution.ChainDepth),
 			"deep_chain":                ctx.Execution.DeepChain,
 			"shell_in_chain":            ctx.Execution.ShellInChain,
-			"curl_wget_in_chain":        ctx.Execution.CurlWgetInChain,
+			"network_tool_in_chain":     ctx.Execution.NetworkToolInChain,
 			"interpreter_in_chain":      ctx.Execution.InterpreterInChain,
 			"container_runtime_in_chain": ctx.Execution.ContainerRuntimeInChain,
 			"memfd_or_deleted_exec":     ctx.Execution.MemfdOrDeletedExec,

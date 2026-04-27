@@ -98,7 +98,7 @@ the CEL input object currently looks like this:
     "chain_depth": 5,
     "deep_chain": true,
     "shell_in_chain": true,
-    "curl_wget_in_chain": false,
+    "network_tool_in_chain": false,
     "interpreter_in_chain": false,
     "container_runtime_in_chain": false,
     "memfd_or_deleted_exec": false
@@ -134,7 +134,7 @@ execution.suspicious_path_exec
 execution.chain_depth
 execution.deep_chain
 execution.shell_in_chain
-execution.curl_wget_in_chain
+execution.network_tool_in_chain
 execution.interpreter_in_chain
 execution.container_runtime_in_chain
 execution.memfd_or_deleted_exec

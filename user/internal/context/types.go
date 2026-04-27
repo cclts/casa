@@ -21,7 +21,7 @@ type ExecutionContext struct {
 	SuspiciousPathExec    bool
 	DeepChain             bool
 	ShellInChain          bool
-	CurlWgetInChain       bool
+	NetworkToolInChain    bool
 	InterpreterInChain    bool
 	ContainerRuntimeInChain bool
 	MemfdOrDeletedExec    bool

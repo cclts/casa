@@ -23,8 +23,8 @@
     },
     {
       "name": "download_then_exec",
-      "description": "Network activity followed by execution in a chain that includes curl or wget.",
-      "expr": "history.connect_then_exec && execution.curl_wget_in_chain",
+      "description": "Network activity followed by execution in a chain that includes a network tool.",
+      "expr": "history.connect_then_exec && execution.network_tool_in_chain",
       "weight": 6,
       "enabled": true
     },
