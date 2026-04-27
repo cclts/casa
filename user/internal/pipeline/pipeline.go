@@ -56,74 +56,10 @@ func Run(events <-chan event.Event, decisionEngine *decision.Engine, auditMonito
 		info, _ := tracker.GetInfo(e.PID)
 		ctx := contextManager.ObserveAndBuild(sess.SessionPID, lineage, securityStore, e, info.Depth)
 		result := decisionEngine.Evaluate(ctx)
-		log.Printf("[%s] (Time: %s PID: %d, Depth: %d, Session %d)", e.Type, e.TimeHuman, e.PID, info.Depth, sess.ID)
-
-		switch e.Type {
-		case event.EventExecve:
-			fullArgs := ""
-			if len(e.Args) > 0 {
-				fullArgs = strings.Join(e.Args, " ")
-			}
-
-			log.Printf("  ➤ Exec: %s", e.Path)
-			if fullArgs != "" {
-				log.Printf("  ➤ Args: %s", fullArgs)
-			}
-
-		case event.EventOpenat:
-			log.Printf("  ➤ Open: %s flags=0x%x mode=0%o", e.Path, e.Flags, e.Mode)
-		case event.EventConnect:
-			log.Printf("  ➤ Connect: %s:%d", e.Addr, e.Port)
-		case event.EventExit:
-			log.Printf("  ➤ Exit: pid=%d tid=%d", e.PID, e.TID)
-		}
-		// Print lineage inline because it is often the fastest way to explain suspicious ancestry.
-		for i, n := range lineage.Nodes {
-			prefix := "  ↳"
-			if i == 0 {
-				prefix = "  [Target]"
-			}
-			indent := strings.Repeat("    ", i)
-			log.Printf("%s%s %d (%s)", indent, prefix, n.PID, n.Comm)
-		}
-
-		log.Printf("  • Context Exec: binary=%s uid=%d depth=%d suspicious_path=%v",
-			ctx.Execution.BinaryPath,
-			ctx.Execution.UID,
-			ctx.Execution.ChainDepth,
-			ctx.Execution.SuspiciousPathExec,
-		)
-		log.Printf("  • Context Caps: danger=%v seccomp_enabled=%v unknown=%v",
-			ctx.Capability.DangerousCaps,
-			!ctx.Capability.SeccompDisabled,
-			ctx.Capability.CapabilityUnknown,
-		)
-		log.Printf("  • Context History: exec=%d open=%d connect=%d connect_then_exec=%v sensitive_then_net=%v sensitive_then_execve=%v burst_connect=%v burst_exec=%v unique_open_paths=%d",
-			ctx.History.ExecCount,
-			ctx.History.OpenCount,
-			ctx.History.ConnectCount,
-			ctx.History.ConnectThenExec,
-			ctx.History.SensitiveThenNetwork,
-			ctx.History.SensitiveThenExecve,
-			ctx.History.BurstConnect,
-			ctx.History.BurstExec,
-			ctx.History.UniqueOpenPathCount,
-		)
-		log.Printf("  • Context File: write_then_exec_same_path=%v opened_deleted_path=%v",
-			ctx.File.WriteThenExecSamePath,
-			ctx.File.OpenedDeletedPath,
-		)
-		log.Printf("  • Decision: action=%s score=%d thresholds(log=%d alert=%d) rules=%v",
-			result.Action,
-			result.Score,
-			result.LogThreshold,
-			result.AlertThreshold,
-			result.Triggered,
-		)
 
 		// Audit output is best-effort: analysis should continue even if disk logging fails.
 		if err := auditMonitor.Record(e, ctx, result); err != nil {
-			log.Printf("  • Audit: write_failed err=%v", err)
+			log.Printf("Audit: write_failed err=%v", err)
 		}
 
 		if e.Type == event.EventExit {

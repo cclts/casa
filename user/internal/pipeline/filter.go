@@ -1,34 +1,42 @@
 package pipeline
 
 import (
-	"bytes"
+	"strings"
 
-	"github.com/cclts/casa/user/internal/ebpf"
+	"github.com/cclts/casa/user/internal/event"
 )
 
-// blackList suppresses noisy commands that are not useful for the current analysis flow.
-var blackList = map[string]bool{
-	"cpuUsage.sh": true,
-	"ps":          true,
-	"node":        true,
+func ShouldDropEvent(e event.Event) bool {
+	return isRuntimeLoaderNoise(e)
 }
 
-// Filter drops known-noisy events before they reach the more expensive user-space stages.
-func Filter(rawEvents <-chan ebpf.Event) <-chan ebpf.Event {
-	filtered := make(chan ebpf.Event, 500)
+func isRuntimeLoaderNoise(e event.Event) bool {
+	if e.Type != event.OPENAT {
+		return false
+	}
 
-	go func() {
-		defer close(filtered)
-		for e := range rawEvents {
-			comm := string(bytes.TrimRight(e.Comm[:], "\x00"))
+	p := e.Path
 
-			if blackList[comm] {
-				continue
-			}
+	if p == "/etc/ld.so.cache" {
+		return true
+	}
 
-			filtered <- e
-		}
-	}()
+	if strings.HasPrefix(p, "/lib/") ||
+		strings.HasPrefix(p, "/usr/lib/") ||
+		strings.HasPrefix(p, "/lib64/") {
+		return strings.Contains(p, ".so")
+	}
 
-	return filtered
+	return false
+}
+
+func IsRoutineDiscoveryCommand(e event.Event) bool {
+	if e.Type != event.EXECVE {
+		return false
+	}
+
+	return e.Path == "/usr/bin/ip" &&
+		len(e.Args) >= 3 &&
+		e.Args[1] == "neigh" &&
+		e.Args[2] == "show"
 }
