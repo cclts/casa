@@ -17,6 +17,52 @@ const (
 
 var burstWindow = 10 * time.Second
 
+var suspiciousPathPatterns = []string{
+	"/tmp/",
+	"/var/tmp/",
+	"/dev/shm/",
+	"/run/user/",
+	"/proc/self/fd/",
+}
+
+var sensitivePathPrefixes = []string{
+	"/etc/",
+	"/root/",
+	"/home/",
+	"/proc/",
+	"/sys/",
+	"/var/run/secrets/",
+	"/run/secrets/",
+	"/var/lib/kubelet/",
+	"/var/lib/docker/",
+	"/var/lib/containerd/",
+}
+
+var sensitivePathPatterns = []string{
+	"/.ssh/",
+	"/.gnupg/",
+	"/.aws/",
+	"/.azure/",
+	"/.gcloud/",
+	"/.kube/",
+	"/.docker/",
+	"/.config/",
+	"/.npmrc",
+	"/.pypirc",
+	"/.netrc",
+	"/id_rsa",
+	"/id_ed25519",
+	"/authorized_keys",
+	"/known_hosts",
+	"/credentials",
+	"/credentials.json",
+	"/token",
+	"/secret",
+	"/passwd",
+	"/shadow",
+	".env",
+}
+
 var shellNames = map[string]struct{}{
 	"sh":   {},
 	"bash": {},
@@ -26,9 +72,16 @@ var shellNames = map[string]struct{}{
 	"fish": {},
 }
 
-var curlWgetNames = map[string]struct{}{
-	"curl": {},
-	"wget": {},
+var networkToolNames = map[string]struct{}{
+	"curl":    {},
+	"wget":    {},
+	"nc":      {},
+	"netcat":  {},
+	"ncat":    {},
+	"socat":   {},
+	"ssh":     {},
+	"scp":     {},
+	"rsync":   {},
 }
 
 var interpreterNames = map[string]struct{}{
@@ -39,6 +92,10 @@ var interpreterNames = map[string]struct{}{
 	"node":    {},
 	"php":     {},
 	"lua":     {},
+	"bash":    {},
+	"sh":      {},
+	"dash":    {},
+	"zsh":     {},
 }
 
 var containerRuntimeNames = map[string]struct{}{
@@ -53,35 +110,35 @@ var containerRuntimeNames = map[string]struct{}{
 
 // isSuspiciousPath marks common execution locations used by fileless or short-lived payloads.
 func isSuspiciousPath(path string) bool {
-	if path == "" {
+	lower := normalizePath(path)
+	if lower == "" {
 		return false
 	}
 
-	lower := strings.ToLower(path)
-	return strings.Contains(lower, "/tmp/") ||
-		strings.HasPrefix(lower, "memfd:") ||
-		strings.Contains(lower, " (deleted)") ||
-		strings.Contains(lower, "/dev/shm/")
+	for _, pattern := range suspiciousPathPatterns {
+		if strings.Contains(lower, pattern) {
+			return true
+		}
+	}
+
+	return strings.HasPrefix(lower, "memfd:") || strings.Contains(lower, " (deleted)")
 }
 
 // isSensitivePath marks paths that are usually interesting for credential or system data access.
 func isSensitivePath(path string) bool {
-	if path == "" {
+	lower := normalizePath(path)
+	if lower == "" {
 		return false
 	}
 
-	lower := strings.ToLower(path)
-	sensitivePrefixes := []string{
-		"/etc/",
-		"/root/",
-		"/home/",
-		"/var/run/secrets/",
-		"/run/secrets/",
-		"/proc/",
+	for _, prefix := range sensitivePathPrefixes {
+		if strings.HasPrefix(lower, prefix) {
+			return true
+		}
 	}
 
-	for _, prefix := range sensitivePrefixes {
-		if strings.HasPrefix(lower, prefix) {
+	for _, pattern := range sensitivePathPatterns {
+		if strings.Contains(lower, pattern) {
 			return true
 		}
 	}
@@ -90,16 +147,16 @@ func isSensitivePath(path string) bool {
 }
 
 func isMemfdOrDeletedPath(path string) bool {
-	if path == "" {
+	lower := normalizePath(path)
+	if lower == "" {
 		return false
 	}
 
-	lower := strings.ToLower(path)
 	return strings.HasPrefix(lower, "memfd:") || strings.Contains(lower, " (deleted)")
 }
 
 func isDeletedPath(path string) bool {
-	return strings.Contains(strings.ToLower(path), " (deleted)")
+	return strings.Contains(normalizePath(path), " (deleted)")
 }
 
 // trimOpenEvents keeps only the latest open artifacts for pattern matching.
@@ -143,7 +200,7 @@ func trimRecentEvents(items []ObservedEvent, limit int) []ObservedEvent {
 
 func lineageHasCommand(lineage []LineageNode, names map[string]struct{}) bool {
 	for _, node := range lineage {
-		name := strings.ToLower(filepath.Base(node.Comm))
+		name := normalizePath(basenameFromPath(node.Comm))
 		if _, ok := names[name]; ok {
 			return true
 		}
@@ -172,6 +229,9 @@ func basenameFromPath(path string) string {
 	if path == "" {
 		return ""
 	}
-	parts := strings.Split(path, "/")
-	return parts[len(parts)-1]
+	return filepath.Base(path)
+}
+
+func normalizePath(path string) string {
+	return strings.ToLower(strings.TrimSpace(path))
 }
