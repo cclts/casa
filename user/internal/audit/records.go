@@ -1,9 +1,6 @@
 package audit
 
 import (
-	"time"
-
-	"github.com/cclts/casa/user/internal/context"
 	"github.com/cclts/casa/user/internal/decision"
 	"github.com/cclts/casa/user/internal/rules"
 )
@@ -36,15 +33,27 @@ type SessionLogRecord struct {
 
 // SessionRecord stores the monitor's current view of a session.
 type SessionRecord struct {
-	CreatedAt              string              `json:"created_at"`
-	UpdatedAt              string              `json:"updated_at"`
-	ClosedAt               string              `json:"closed_at,omitempty"`
-	IsClosed               bool                `json:"is_closed"`
-	EventCounts            context.EventCounts `json:"event_counts"`
-	UniqueConnectEndpoints []context.Endpoint  `json:"unique_connect_endpoints"`
-	MaxScore               int                 `json:"max_score"`
-	AlertTriggered         bool                `json:"alert_triggered"`
-	FinalDecision          DecisionRecord      `json:"final_decision"`
+	CreatedAt              string         `json:"created_at"`
+	UpdatedAt              string         `json:"updated_at"`
+	ClosedAt               string         `json:"closed_at,omitempty"`
+	IsClosed               bool           `json:"is_closed"`
+	EventCounts            EventCounts    `json:"event_counts"`
+	UniqueConnectEndpoints []Endpoint     `json:"unique_connect_endpoints"`
+	MaxLineageDepth        int            `json:"max_lineage_depth"`
+	MaxScore               int            `json:"max_score"`
+	AlertTriggered         bool           `json:"alert_triggered"`
+	FinalDecision          DecisionRecord `json:"final_decision"`
+}
+
+type EventCounts struct {
+	Execs    int `json:"execs"`
+	Opens    int `json:"opens"`
+	Connects int `json:"connects"`
+}
+
+type Endpoint struct {
+	Addr string `json:"addr"`
+	Port uint16 `json:"port"`
 }
 
 // EventRecord stores the normalized event fields that triggered evaluation.
@@ -81,16 +90,10 @@ type DecisionRecord struct {
 }
 
 type sessionAggregate struct {
-	ID                     uint32
-	CreatedAt              time.Time
-	UpdatedAt              time.Time
-	ClosedAt               time.Time
-	IsClosed               bool
-	EventCounts            context.EventCounts
-	UniqueConnectEndpoints []context.Endpoint
-	MaxScore               int
-	AlertTriggered         bool
-	FinalDecision          DecisionRecord
-	TriggeredRules         []rules.TriggeredRule
-	triggeredRuleIndex     map[string]struct{}
+	ID                 uint32
+	MaxScore           int
+	AlertTriggered     bool
+	FinalDecision      DecisionRecord
+	TriggeredRules     []rules.TriggeredRule
+	triggeredRuleIndex map[string]struct{}
 }

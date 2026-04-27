@@ -5,45 +5,33 @@ import (
 
 	"github.com/cclts/casa/user/internal/context"
 	"github.com/cclts/casa/user/internal/decision"
-	"github.com/cclts/casa/user/internal/event"
 	"github.com/cclts/casa/user/internal/rules"
 )
 
 const maxSessionEndpoints = 16
 
-func updateSessionAggregate(session *sessionAggregate, e event.Event, result decision.Result) {
-	session.UpdatedAt = e.Time
+func updateSessionAggregate(session *sessionAggregate, result decision.Result) {
 	if result.Score > session.MaxScore {
 		session.MaxScore = result.Score
 	}
 	updateFinalDecision(session, result)
 	mergeTriggeredRules(session, result.Triggered)
-
-	switch e.Type {
-	case event.EventExecve:
-		session.EventCounts.Execs++
-	case event.EventOpenat:
-		session.EventCounts.Opens++
-	case event.EventConnect:
-		session.EventCounts.Connects++
-		endpoint := context.Endpoint{Addr: e.Addr, Port: e.Port}
-		session.UniqueConnectEndpoints = appendUniqueEndpoint(session.UniqueConnectEndpoints, endpoint)
-	}
 }
 
-func snapshotSessionRecord(session *sessionAggregate) SessionRecord {
+func snapshotSessionRecord(raw context.SessionSnapshot, session *sessionAggregate) SessionRecord {
 	record := SessionRecord{
-		CreatedAt:              formatTimestamp(session.CreatedAt),
-		UpdatedAt:              formatTimestamp(session.UpdatedAt),
-		IsClosed:               session.IsClosed,
-		EventCounts:            session.EventCounts,
-		UniqueConnectEndpoints: append([]context.Endpoint(nil), session.UniqueConnectEndpoints...),
+		CreatedAt:              formatTimestamp(raw.CreatedAt),
+		UpdatedAt:              formatTimestamp(raw.UpdatedAt),
+		IsClosed:               raw.IsClosed,
+		EventCounts:            EventCounts{Execs: raw.Counts.Execs, Opens: raw.Counts.Opens, Connects: raw.Counts.Connects},
+		UniqueConnectEndpoints: convertEndpoints(raw.UniqueConnectEndpoints),
+		MaxLineageDepth:        raw.MaxLineageDepth,
 		MaxScore:               session.MaxScore,
 		AlertTriggered:         session.AlertTriggered,
 		FinalDecision:          session.FinalDecision,
 	}
-	if !session.ClosedAt.IsZero() {
-		record.ClosedAt = formatTimestamp(session.ClosedAt)
+	if !raw.ClosedAt.IsZero() {
+		record.ClosedAt = formatTimestamp(raw.ClosedAt)
 	}
 	return record
 }
@@ -95,18 +83,22 @@ func actionPriority(action decision.Action) int {
 	}
 }
 
-func appendUniqueEndpoint(items []context.Endpoint, endpoint context.Endpoint) []context.Endpoint {
-	for _, item := range items {
-		if item == endpoint {
-			return items
-		}
+func convertEndpoints(items []context.Endpoint) []Endpoint {
+	if len(items) == 0 {
+		return nil
+	}
+	if len(items) > maxSessionEndpoints {
+		items = items[len(items)-maxSessionEndpoints:]
 	}
 
-	items = append(items, endpoint)
-	if len(items) <= maxSessionEndpoints {
-		return items
+	out := make([]Endpoint, 0, len(items))
+	for _, item := range items {
+		out = append(out, Endpoint{
+			Addr: item.Addr,
+			Port: item.Port,
+		})
 	}
-	return items[len(items)-maxSessionEndpoints:]
+	return out
 }
 
 func formatTimestamp(ts time.Time) string {

@@ -2,7 +2,6 @@ package pipeline
 
 import (
 	"log"
-	"strings"
 
 	"github.com/cclts/casa/user/internal/audit"
 	"github.com/cclts/casa/user/internal/context"
@@ -27,6 +26,10 @@ func Run(events <-chan event.Event, decisionEngine *decision.Engine, auditMonito
 
 	// Process incoming events from the eBPF ring buffer.
 	for e := range events {
+		if err := auditMonitor.RecordEvent(e); err != nil {
+			log.Printf("Audit: event_write_failed err=%v", err)
+		}
+
 		// Tracking: Update the process lineage tree
 		// On new process execution, propagate the tracking status from parent to child.
 		if e.Type == event.EventExecve {
@@ -55,10 +58,14 @@ func Run(events <-chan event.Event, decisionEngine *decision.Engine, auditMonito
 		// The tracker caches parent/child depth so later stages do not have to re-walk /proc.
 		info, _ := tracker.GetInfo(e.PID)
 		ctx := contextManager.ObserveAndBuild(sess.SessionPID, lineage, securityStore, e, info.Depth)
+		rawSession, ok := contextManager.SnapshotSession(sess.SessionPID)
+		if !ok {
+			continue
+		}
 		result := decisionEngine.Evaluate(ctx)
 
 		// Audit output is best-effort: analysis should continue even if disk logging fails.
-		if err := auditMonitor.Record(e, ctx, result); err != nil {
+		if err := auditMonitor.Record(e, ctx, rawSession, result); err != nil {
 			log.Printf("Audit: write_failed err=%v", err)
 		}
 

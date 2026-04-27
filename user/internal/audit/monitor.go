@@ -22,10 +22,19 @@ type Monitor struct {
 	auditFile   *os.File
 	alertFile   *os.File
 	sessions    map[uint32]*sessionAggregate
+	rawSessions map[uint32]context.SessionSnapshot
+	pending     map[eventKey]event.Event
 	done        chan struct{}
 	stopFlush   chan struct{}
 	writerErr   error
 	closed      bool
+}
+
+type eventKey struct {
+	Type    event.EventType
+	PID     uint32
+	TID     uint32
+	KTimeNS uint64
 }
 
 // NewMonitor opens append-only events.log, sessions.log, audit.log, and alert.log files.
@@ -69,6 +78,8 @@ func NewMonitor(logPath, alertPath string) (*Monitor, error) {
 		auditFile:   auditFile,
 		alertFile:   alertFile,
 		sessions:    make(map[uint32]*sessionAggregate),
+		rawSessions: make(map[uint32]context.SessionSnapshot),
+		pending:     make(map[eventKey]event.Event),
 		done:        make(chan struct{}),
 		stopFlush:   make(chan struct{}),
 	}
@@ -165,9 +176,9 @@ func (m *Monitor) Close() error {
 	return firstErr
 }
 
-// Record writes every event to events.log and writes session snapshots only on
-// root exit, first alert-threshold crossing, periodic flush, and shutdown.
-func (m *Monitor) Record(e event.Event, ctx context.Context, result decision.Result) error {
+// RecordEvent registers an observed event so it can be written to events.log
+// once the pipeline finishes deriving session/context metadata for it.
+func (m *Monitor) RecordEvent(e event.Event) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -178,14 +189,31 @@ func (m *Monitor) Record(e event.Event, ctx context.Context, result decision.Res
 		return errors.New("audit monitor is closed")
 	}
 
-	eventRecord := buildEventLogRecord(e, ctx)
-	if err := writeJSONL(m.eventFile, eventRecord, "event log"); err != nil {
+	m.pending[eventKeyFromEvent(e)] = e
+	return nil
+}
+
+// Record writes thresholded audit logs and session snapshots. It also flushes
+// the corresponding events.log record now that session/context metadata exists.
+func (m *Monitor) Record(e event.Event, ctx context.Context, raw context.SessionSnapshot, result decision.Result) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if m.writerErr != nil {
+		return m.writerErr
+	}
+	if m.closed {
+		return errors.New("audit monitor is closed")
+	}
+
+	if err := m.writePendingEventLocked(e, ctx); err != nil {
 		m.writerErr = err
 		return err
 	}
 
 	session := m.getOrCreateSessionLocked(ctx.SessionID, e.Time)
-	updateSessionAggregate(session, e, result)
+	updateSessionAggregate(session, result)
+	m.rawSessions[ctx.SessionID] = raw
 
 	if result.Score >= result.LogThreshold {
 		if err := m.writeFullRecordLocked(m.auditFile, "audit log", session, e, result); err != nil {
@@ -203,44 +231,61 @@ func (m *Monitor) Record(e event.Event, ctx context.Context, result decision.Res
 
 	if !session.AlertTriggered && result.CrossesAlertThreshold() {
 		session.AlertTriggered = true
-		if err := m.writeSessionRecordLocked(session, "alert_threshold_crossed", e.Time); err != nil {
+		if err := m.writeSessionRecordLocked(raw, session, "alert_threshold_crossed", e.Time); err != nil {
 			m.writerErr = err
 			return err
 		}
 	}
 
 	if e.Type == event.EventExit && e.PID == ctx.SessionID {
-		session.IsClosed = true
-		session.ClosedAt = e.Time
-		if err := m.writeSessionRecordLocked(session, "session_root_exit", e.Time); err != nil {
+		if err := m.writeSessionRecordLocked(raw, session, "session_root_exit", e.Time); err != nil {
 			m.writerErr = err
 			return err
 		}
 		delete(m.sessions, ctx.SessionID)
+		delete(m.rawSessions, ctx.SessionID)
 	}
 
 	return nil
 }
 
+func (m *Monitor) writePendingEventLocked(e event.Event, ctx context.Context) error {
+	key := eventKeyFromEvent(e)
+	raw, ok := m.pending[key]
+	if ok {
+		delete(m.pending, key)
+	} else {
+		raw = e
+	}
+
+	eventRecord := buildEventLogRecord(raw, ctx)
+	return writeJSONL(m.eventFile, eventRecord, "event log")
+}
+
 func (m *Monitor) flushSessionsLocked(reason string, clear bool) {
 	now := time.Now()
 	for id, session := range m.sessions {
-		if err := m.writeSessionRecordLocked(session, reason, now); err != nil {
+		raw, ok := m.rawSessions[id]
+		if !ok {
+			continue
+		}
+		if err := m.writeSessionRecordLocked(raw, session, reason, now); err != nil {
 			m.writerErr = err
 			return
 		}
-		if clear || session.IsClosed {
+		if clear || raw.IsClosed {
 			delete(m.sessions, id)
+			delete(m.rawSessions, id)
 		}
 	}
 }
 
-func (m *Monitor) writeSessionRecordLocked(session *sessionAggregate, reason string, ts time.Time) error {
+func (m *Monitor) writeSessionRecordLocked(raw context.SessionSnapshot, session *sessionAggregate, reason string, ts time.Time) error {
 	record := SessionLogRecord{
 		Timestamp: formatTimestamp(ts),
-		SessionID: session.ID,
+		SessionID: raw.ID,
 		Reason:    reason,
-		Session:   snapshotSessionRecord(session),
+		Session:   snapshotSessionRecord(raw, session),
 	}
 
 	return writeJSONL(m.sessionFile, record, "session log")
@@ -264,13 +309,19 @@ func (m *Monitor) getOrCreateSessionLocked(sessionID uint32, createdAt time.Time
 	}
 
 	session = &sessionAggregate{
-		ID:                     sessionID,
-		CreatedAt:              createdAt,
-		UpdatedAt:              createdAt,
-		UniqueConnectEndpoints: make([]context.Endpoint, 0, 8),
-		TriggeredRules:         make([]rules.TriggeredRule, 0, 8),
-		triggeredRuleIndex:     make(map[string]struct{}),
+		ID:                 sessionID,
+		TriggeredRules:     make([]rules.TriggeredRule, 0, 8),
+		triggeredRuleIndex: make(map[string]struct{}),
 	}
 	m.sessions[sessionID] = session
 	return session
+}
+
+func eventKeyFromEvent(e event.Event) eventKey {
+	return eventKey{
+		Type:    e.Type,
+		PID:     e.PID,
+		TID:     e.TID,
+		KTimeNS: e.KTimeNS,
+	}
 }

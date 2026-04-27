@@ -20,7 +20,19 @@ type SessionState struct {
 	ClosedAt  time.Time
 	IsClosed  bool
 
-	MaxLineageDepth       int
+	MaxLineageDepth        int
+	UniqueConnectEndpoints []Endpoint
+}
+
+// SessionSnapshot is the exported session-level raw state view.
+type SessionSnapshot struct {
+	ID                     uint32
+	Counts                 EventCounts
+	CreatedAt              time.Time
+	UpdatedAt              time.Time
+	ClosedAt               time.Time
+	IsClosed               bool
+	MaxLineageDepth        int
 	UniqueConnectEndpoints []Endpoint
 }
 
@@ -30,9 +42,9 @@ type ProcessState struct {
 	PPID uint32
 	UID  uint32
 
-	Comm     string
-	ExecPath string
-	Args     []string
+	Comm         string
+	ExecPath     string
+	Args         []string
 	LineageDepth int
 
 	ExecCount    int
@@ -76,11 +88,11 @@ type ObservedEvent struct {
 	Type event.EventType
 	PID  uint32
 
-	Path string
+	Path  string
 	Flags uint32
 	Mode  uint32
-	Addr string
-	Port uint16
+	Addr  string
+	Port  uint16
 
 	Time time.Time
 }
@@ -102,12 +114,12 @@ type ObservedConnect struct {
 // newSessionState initializes the in-memory container for one resolved session.
 func newSessionState(id uint32, createdAt time.Time) *SessionState {
 	return &SessionState{
-		ID:              id,
-		Processes:       make(map[uint32]*ProcessState),
-		RecentEvents:    make([]ObservedEvent, 0, defaultRecentEventLimit),
+		ID:                     id,
+		Processes:              make(map[uint32]*ProcessState),
+		RecentEvents:           make([]ObservedEvent, 0, defaultRecentEventLimit),
 		UniqueConnectEndpoints: make([]Endpoint, 0, 8),
-		CreatedAt:       createdAt,
-		UpdatedAt:       createdAt,
+		CreatedAt:              createdAt,
+		UpdatedAt:              createdAt,
 	}
 }
 
@@ -141,4 +153,20 @@ func (s *SessionState) allProcessesExited() bool {
 	}
 
 	return true
+}
+
+func (s *SessionState) snapshot() SessionSnapshot {
+	endpoints := make([]Endpoint, len(s.UniqueConnectEndpoints))
+	copy(endpoints, s.UniqueConnectEndpoints)
+
+	return SessionSnapshot{
+		ID:                     s.ID,
+		Counts:                 s.Counts,
+		CreatedAt:              s.CreatedAt,
+		UpdatedAt:              s.UpdatedAt,
+		ClosedAt:               s.ClosedAt,
+		IsClosed:               s.IsClosed,
+		MaxLineageDepth:        s.MaxLineageDepth,
+		UniqueConnectEndpoints: endpoints,
+	}
 }

@@ -120,6 +120,19 @@ func (m *Manager) ObserveAndBuild(
 	return BuildContext(session, e.PID)
 }
 
+// SnapshotSession returns the current raw session snapshot for one session.
+func (m *Manager) SnapshotSession(sessionID uint32) (SessionSnapshot, bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	session, ok := m.sessions[sessionID]
+	if !ok {
+		return SessionSnapshot{}, false
+	}
+
+	return session.snapshot(), true
+}
+
 // rebuildLineage converts the process package's lineage model into the context-local shape.
 func rebuildLineage(lineage process.Lineage) []LineageNode {
 	if len(lineage.Nodes) == 0 {
