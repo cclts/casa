@@ -33,11 +33,12 @@ func Run(events <-chan event.Event, decisionEngine *decision.Engine, auditMonito
 		// Tracking: Update the process lineage tree
 		// On new process execution, propagate the tracking status from parent to child.
 		if e.Type == event.EventExecve {
-			tracker.Propagate(e.PID, e.PPID, e.Comm)
+			tracker.Propagate(e.PID, e.PPID, e.Comm, isTransparentRoutineExec(e))
 		}
 
 		// Skip events if neither the process nor its parent is in our watchlist.
 		if !tracker.Exists(e.PID) && !tracker.Exists(e.PPID) {
+			auditMonitor.DiscardEvent(e)
 			continue
 		}
 
@@ -48,6 +49,7 @@ func Run(events <-chan event.Event, decisionEngine *decision.Engine, auditMonito
 			decisionEngine.LineageMaxDepth(),
 		)
 		if !ok {
+			auditMonitor.DiscardEvent(e)
 			continue
 		}
 
@@ -57,9 +59,14 @@ func Run(events <-chan event.Event, decisionEngine *decision.Engine, auditMonito
 
 		// The tracker caches parent/child depth so later stages do not have to re-walk /proc.
 		info, _ := tracker.GetInfo(e.PID)
+		if e.Type != event.EventExit && !ShouldIngestIntoContext(e) {
+			auditMonitor.DiscardEvent(e)
+			continue
+		}
 		ctx := contextManager.ObserveAndBuild(sess.SessionPID, lineage, securityStore, e, info.Depth)
 		rawSession, ok := contextManager.SnapshotSession(sess.SessionPID)
 		if !ok {
+			auditMonitor.DiscardEvent(e)
 			continue
 		}
 		result := decisionEngine.Evaluate(ctx)

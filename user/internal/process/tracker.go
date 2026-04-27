@@ -6,9 +6,10 @@ import (
 
 // TrackedInfo is the cached process metadata used to avoid repeated /proc reads.
 type TrackedInfo struct {
-	Comm  string
-	PPID  uint32
-	Depth int
+	Comm        string
+	PPID        uint32
+	Depth       int
+	Transparent bool
 }
 
 // Tracker stores the subset of the process tree that the pipeline cares about.
@@ -42,13 +43,14 @@ func (t *Tracker) AddRoot(pid uint32) {
 }
 
 // Add inserts or updates cached process metadata.
-func (t *Tracker) Add(pid uint32, ppid uint32, comm string, depth int) {
+func (t *Tracker) Add(pid uint32, ppid uint32, comm string, depth int, transparent bool) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	t.tracked[pid] = TrackedInfo{
-		Comm:  comm,
-		PPID:  ppid,
-		Depth: depth,
+		Comm:        comm,
+		PPID:        ppid,
+		Depth:       depth,
+		Transparent: transparent,
 	}
 }
 
@@ -73,16 +75,25 @@ func (t *Tracker) GetInfo(pid uint32) (TrackedInfo, bool) {
 }
 
 // Propagate seeds a child entry from its parent's cached depth when an execve arrives.
-func (t *Tracker) Propagate(pid uint32, ppid uint32, comm string) {
+func (t *Tracker) Propagate(pid uint32, ppid uint32, comm string, transparent bool) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
 	parent, ok := t.tracked[ppid]
 	if !ok {
 		return
 	}
 
+	depth := parent.Depth + 1
+	if transparent {
+		depth = parent.Depth
+	}
+
 	t.tracked[pid] = TrackedInfo{
-		Comm:  comm,
-		PPID:  ppid,
-		Depth: parent.Depth + 1,
+		Comm:        comm,
+		PPID:        ppid,
+		Depth:       depth,
+		Transparent: transparent,
 	}
 }
 

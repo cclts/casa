@@ -1,21 +1,22 @@
 package pipeline
 
 import (
+	"path/filepath"
 	"strings"
 
 	"github.com/cclts/casa/user/internal/event"
 )
 
-func ShouldDropEvent(e event.Event) bool {
-	return isRuntimeLoaderNoise(e)
+func ShouldIngestIntoContext(e event.Event) bool {
+	return !isRuntimeLoaderNoise(e) && !isTransparentRoutineExec(e)
 }
 
 func isRuntimeLoaderNoise(e event.Event) bool {
-	if e.Type != event.OPENAT {
+	if e.Type != event.EventOpenat {
 		return false
 	}
 
-	p := e.Path
+	p := strings.ToLower(strings.TrimSpace(e.Path))
 
 	if p == "/etc/ld.so.cache" {
 		return true
@@ -30,13 +31,32 @@ func isRuntimeLoaderNoise(e event.Event) bool {
 	return false
 }
 
-func IsRoutineDiscoveryCommand(e event.Event) bool {
-	if e.Type != event.EXECVE {
+func isTransparentRoutineExec(e event.Event) bool {
+	if e.Type != event.EventExecve {
 		return false
 	}
 
-	return e.Path == "/usr/bin/ip" &&
-		len(e.Args) >= 3 &&
-		e.Args[1] == "neigh" &&
-		e.Args[2] == "show"
+	base := strings.ToLower(filepath.Base(strings.TrimSpace(e.Path)))
+	switch base {
+	case "uname":
+		return hasExactArgs(e.Args, "-a")
+	case "whoami", "pwd", "id":
+		return len(e.Args) == 0
+	case "ip":
+		return hasExactArgs(e.Args, "neigh", "show")
+	default:
+		return false
+	}
+}
+
+func hasExactArgs(args []string, expected ...string) bool {
+	if len(args) != len(expected) {
+		return false
+	}
+	for i := range expected {
+		if args[i] != expected[i] {
+			return false
+		}
+	}
+	return true
 }

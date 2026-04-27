@@ -79,6 +79,8 @@ func (st *SessionTracker) ResolveSession(pid uint32, eventTime time.Time, maxDep
 	}
 
 	sess.LastSeen = eventTime
+	sess.Processes[pid] = struct{}{}
+	st.pidToSession[pid] = sessionPID
 
 	// add nodes to session
 	for _, n := range lineage.Nodes {

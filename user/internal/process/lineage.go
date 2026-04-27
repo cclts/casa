@@ -28,11 +28,13 @@ func BuildLineage(pid int, tracker *Tracker, maxDepth int) Lineage {
 	for i := 0; i < maxDepth; i++ {
 		// Check the Tracker cache first.
 		if info, ok := tracker.GetInfo(uint32(current)); ok {
-			nodes = append(nodes, Node{
-				PID:  current,
-				PPID: int(info.PPID),
-				Comm: info.Comm,
-			})
+			if !info.Transparent {
+				nodes = append(nodes, Node{
+					PID:  current,
+					PPID: int(info.PPID),
+					Comm: info.Comm,
+				})
+			}
 
 			// Stop tracing if reached the root process (e.g., OpenClaw Gateway).
 			if tracker.IsRoot(uint32(current)) {
@@ -69,7 +71,7 @@ func BuildLineage(pid int, tracker *Tracker, maxDepth int) Lineage {
 			depth = parent.Depth + 1
 		}
 
-		tracker.Add(uint32(current), uint32(ppid), comm, depth)
+		tracker.Add(uint32(current), uint32(ppid), comm, depth, false)
 		log.Printf("[DEBUG] Fallback hit: Discovered pre-existing process %d (%s), adding to tracker", current, comm)
 
 		// Stop tracing if reached the root process (e.g., OpenClaw Gateway).

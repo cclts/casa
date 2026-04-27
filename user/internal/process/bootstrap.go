@@ -32,7 +32,7 @@ func BootstrapOpenClaw(tracker *Tracker, securityStore *SecurityStore) error {
 				continue
 			}
 
-			tracker.Add(uint32(pid), uint32(ppid), comm, 0)
+			tracker.Add(uint32(pid), uint32(ppid), comm, 0, false)
 			tracker.AddRoot(uint32(pid))
 			if securityStore != nil {
 				securityStore.Ensure(uint32(pid))

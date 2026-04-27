@@ -193,6 +193,14 @@ func (m *Monitor) RecordEvent(e event.Event) error {
 	return nil
 }
 
+// DiscardEvent drops a staged event when no full Record call will follow.
+func (m *Monitor) DiscardEvent(e event.Event) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	delete(m.pending, eventKeyFromEvent(e))
+}
+
 // Record writes thresholded audit logs and session snapshots. It also flushes
 // the corresponding events.log record now that session/context metadata exists.
 func (m *Monitor) Record(e event.Event, ctx context.Context, raw context.SessionSnapshot, result decision.Result) error {
