@@ -38,31 +38,28 @@ type Monitor struct {
 
 // EventLogRecord is the JSONL payload written for every observed event.
 type EventLogRecord struct {
-	Timestamp string   `json:"timestamp"`
-	SessionID uint32   `json:"session_id"`
-	PID       uint32   `json:"pid"`
-	PPID      uint32   `json:"ppid"`
-	UID       uint32   `json:"uid"`
-	Type      string   `json:"type"`
-	Comm      string   `json:"comm"`
-	Path      string   `json:"path,omitempty"`
-	Args      []string `json:"args,omitempty"`
-	Flags     uint32   `json:"flags,omitempty"`
-	Mode      uint32   `json:"mode,omitempty"`
-	Addr      string   `json:"addr,omitempty"`
-	Port      uint16   `json:"port,omitempty"`
-	Depth     int      `json:"depth,omitempty"`
+	Timestamp string    `json:"timestamp"`
+	SessionID uint32    `json:"session_id"`
+	PID       uint32    `json:"pid"`
+	PPID      uint32    `json:"ppid"`
+	UID       uint32    `json:"uid"`
+	Type      string    `json:"type"`
+	Comm      string    `json:"comm"`
+	Path      *string   `json:"path,omitempty"`
+	Args      *[]string `json:"args,omitempty"`
+	Flags     *uint32   `json:"flags,omitempty"`
+	Mode      *uint32   `json:"mode,omitempty"`
+	Addr      *string   `json:"addr,omitempty"`
+	Port      *uint16   `json:"port,omitempty"`
+	Depth     int       `json:"depth"`
 }
 
 // SessionLogRecord is the JSONL payload written for session-level snapshots.
 type SessionLogRecord struct {
-	Timestamp    string          `json:"timestamp"`
-	SessionID    uint32          `json:"session_id"`
-	Reason       string          `json:"reason"`
-	Session      SessionRecord   `json:"session"`
-	LastEvent    EventRecord     `json:"last_event"`
-	LastContext  context.Context `json:"last_context"`
-	LastDecision DecisionRecord  `json:"last_decision"`
+	Timestamp string        `json:"timestamp"`
+	SessionID uint32        `json:"session_id"`
+	Reason    string        `json:"reason"`
+	Session   SessionRecord `json:"session"`
 }
 
 // SessionRecord stores the monitor's current view of a session.
@@ -75,6 +72,8 @@ type SessionRecord struct {
 	UniqueConnectEndpoints []context.Endpoint   `json:"unique_connect_endpoints"`
 	MaxScore               int                  `json:"max_score"`
 	AlertTriggered         bool                 `json:"alert_triggered"`
+	FinalDecision          DecisionRecord       `json:"final_decision"`
+	TriggeredRules         []rules.TriggeredRule `json:"triggered_rules"`
 }
 
 // EventRecord stores the normalized event fields that triggered evaluation.
@@ -111,9 +110,9 @@ type sessionAggregate struct {
 	UniqueConnectEndpoints []context.Endpoint
 	MaxScore               int
 	AlertTriggered         bool
-	LastEvent              EventRecord
-	LastContext            context.Context
-	LastDecision           DecisionRecord
+	FinalDecision          DecisionRecord
+	TriggeredRules         []rules.TriggeredRule
+	triggeredRuleIndex     map[string]struct{}
 }
 
 // NewMonitor opens append-only event and session log files.
@@ -231,14 +230,9 @@ func (m *Monitor) Record(e event.Event, ctx context.Context, result decision.Res
 		UID:       e.UID,
 		Type:      e.Type.String(),
 		Comm:      e.Comm,
-		Path:      e.Path,
-		Args:      append([]string(nil), e.Args...),
-		Flags:     e.Flags,
-		Mode:      e.Mode,
-		Addr:      e.Addr,
-		Port:      e.Port,
 		Depth:     ctx.Execution.ChainDepth,
 	}
+	populateEventLogFields(&eventRecord, e)
 
 	if err := m.writeJSONL(m.eventFile, eventRecord, "event log"); err != nil {
 		m.writerErr = err
@@ -246,7 +240,7 @@ func (m *Monitor) Record(e event.Event, ctx context.Context, result decision.Res
 	}
 
 	session := m.getOrCreateSessionLocked(ctx.SessionID, e.Time)
-	updateSessionAggregate(session, e, ctx, result)
+	updateSessionAggregate(session, e, result)
 
 	if !session.AlertTriggered && result.CrossesAlertThreshold() {
 		session.AlertTriggered = true
@@ -280,19 +274,20 @@ func (m *Monitor) getOrCreateSessionLocked(sessionID uint32, createdAt time.Time
 		CreatedAt:              createdAt,
 		UpdatedAt:              createdAt,
 		UniqueConnectEndpoints: make([]context.Endpoint, 0, 8),
+		TriggeredRules:         make([]rules.TriggeredRule, 0, 8),
+		triggeredRuleIndex:     make(map[string]struct{}),
 	}
 	m.sessions[sessionID] = session
 	return session
 }
 
-func updateSessionAggregate(session *sessionAggregate, e event.Event, ctx context.Context, result decision.Result) {
+func updateSessionAggregate(session *sessionAggregate, e event.Event, result decision.Result) {
 	session.UpdatedAt = e.Time
-	session.LastEvent = buildEventRecord(e)
-	session.LastContext = ctx
-	session.LastDecision = buildDecisionRecord(result)
 	if result.Score > session.MaxScore {
 		session.MaxScore = result.Score
 	}
+	updateFinalDecision(session, result)
+	mergeTriggeredRules(session, result.Triggered)
 
 	switch e.Type {
 	case event.EventExecve:
@@ -321,13 +316,10 @@ func (m *Monitor) flushSessionsLocked(reason string, clear bool) {
 
 func (m *Monitor) writeSessionRecordLocked(session *sessionAggregate, reason string, ts time.Time) error {
 	record := SessionLogRecord{
-		Timestamp:    formatTimestamp(ts),
-		SessionID:    session.ID,
-		Reason:       reason,
-		Session:      snapshotSessionRecord(session),
-		LastEvent:    session.LastEvent,
-		LastContext:  session.LastContext,
-		LastDecision: session.LastDecision,
+		Timestamp: formatTimestamp(ts),
+		SessionID: session.ID,
+		Reason:    reason,
+		Session:   snapshotSessionRecord(session),
 	}
 
 	return m.writeJSONL(m.sessionFile, record, "session log")
@@ -342,6 +334,8 @@ func snapshotSessionRecord(session *sessionAggregate) SessionRecord {
 		UniqueConnectEndpoints: append([]context.Endpoint(nil), session.UniqueConnectEndpoints...),
 		MaxScore:               session.MaxScore,
 		AlertTriggered:         session.AlertTriggered,
+		FinalDecision:          session.FinalDecision,
+		TriggeredRules:         append([]rules.TriggeredRule(nil), session.TriggeredRules...),
 	}
 	if !session.ClosedAt.IsZero() {
 		record.ClosedAt = formatTimestamp(session.ClosedAt)
@@ -375,6 +369,43 @@ func buildDecisionRecord(result decision.Result) DecisionRecord {
 	}
 }
 
+func updateFinalDecision(session *sessionAggregate, result decision.Result) {
+	if actionPriority(result.Action) > actionPriority(session.FinalDecision.Action) ||
+		(actionPriority(result.Action) == actionPriority(session.FinalDecision.Action) && result.Score >= session.FinalDecision.Score) {
+		session.FinalDecision = buildDecisionRecord(result)
+		return
+	}
+
+	if result.Score > session.FinalDecision.Score {
+		session.FinalDecision.Score = result.Score
+	}
+}
+
+func mergeTriggeredRules(session *sessionAggregate, triggered []rules.TriggeredRule) {
+	for _, rule := range triggered {
+		key := rule.Name
+		if key == "" {
+			key = rule.Expr
+		}
+		if _, ok := session.triggeredRuleIndex[key]; ok {
+			continue
+		}
+		session.triggeredRuleIndex[key] = struct{}{}
+		session.TriggeredRules = append(session.TriggeredRules, rule)
+	}
+}
+
+func actionPriority(action decision.Action) int {
+	switch action {
+	case decision.ActionAlert:
+		return 2
+	case decision.ActionLog:
+		return 1
+	default:
+		return 0
+	}
+}
+
 func (m *Monitor) writeJSONL(file *os.File, payload any, label string) error {
 	line, err := json.Marshal(payload)
 	if err != nil {
@@ -402,6 +433,24 @@ func resolveLogPath(path, legacyDefault, currentDefault string) string {
 		return filepath.Join(dir, filepath.Base(currentDefault))
 	}
 	return path
+}
+
+func populateEventLogFields(record *EventLogRecord, e event.Event) {
+	switch e.Type {
+	case event.EventExecve:
+		record.Path = stringPtr(e.Path)
+		args := append([]string(nil), e.Args...)
+		record.Args = &args
+	case event.EventOpenat:
+		record.Path = stringPtr(e.Path)
+		record.Flags = uint32Ptr(e.Flags)
+		record.Mode = uint32Ptr(e.Mode)
+	case event.EventConnect:
+		record.Addr = stringPtr(e.Addr)
+		record.Port = uint16Ptr(e.Port)
+	case event.EventExit:
+		// EXIT only keeps the common core fields.
+	}
 }
 
 func appendUniqueEndpoint(items []context.Endpoint, endpoint context.Endpoint) []context.Endpoint {
@@ -439,4 +488,16 @@ func formatTimestamp(ts time.Time) string {
 		return ""
 	}
 	return ts.Format(time.RFC3339Nano)
+}
+
+func stringPtr(v string) *string {
+	return &v
+}
+
+func uint32Ptr(v uint32) *uint32 {
+	return &v
+}
+
+func uint16Ptr(v uint16) *uint16 {
+	return &v
 }
