@@ -68,7 +68,6 @@ type FullLogRecord struct {
 	Timestamp string         `json:"timestamp"`
 	SessionID uint32         `json:"session_id"`
 	Event     EventRecord    `json:"event"`
-	Session   SessionRecord  `json:"session"`
 	Decision  DecisionRecord `json:"decision"`
 }
 

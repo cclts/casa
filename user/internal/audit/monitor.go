@@ -251,7 +251,6 @@ func (m *Monitor) writeFullRecordLocked(file *os.File, label string, session *se
 		Timestamp: e.TimeHuman,
 		SessionID: session.ID,
 		Event:     buildEventRecord(e),
-		Session:   snapshotSessionRecord(session),
 		Decision:  buildDecisionRecord(result),
 	}
 
