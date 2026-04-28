@@ -1,6 +1,7 @@
 package process
 
 import (
+	"fmt"
 	"strings"
 	"sync"
 	"time"
@@ -196,6 +197,25 @@ func (st *SessionTracker) recordRootHintLocked(rootPID uint32, sessionPID uint32
 		hints = hints[len(hints)-rootAttributionHistoryLimit:]
 	}
 	st.rootHints[rootPID] = hints
+}
+
+// DebugRootHints returns a human-readable snapshot of the current attribution
+// hints for one tracked root. This is intended for targeted troubleshooting.
+func (st *SessionTracker) DebugRootHints(rootPID uint32, now time.Time) string {
+	st.mu.RLock()
+	defer st.mu.RUnlock()
+
+	hints := st.rootHints[rootPID]
+	if len(hints) == 0 {
+		return "none"
+	}
+
+	parts := make([]string, 0, len(hints))
+	for _, hint := range hints {
+		age := now.Sub(hint.SeenAt)
+		parts = append(parts, fmt.Sprintf("session=%d source=%d age=%s", hint.SessionPID, hint.SourcePID, age.Round(time.Millisecond)))
+	}
+	return strings.Join(parts, "; ")
 }
 
 // HandleExit marks a tracked process as exited and closes the session when its anchor exits.

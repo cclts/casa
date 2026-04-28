@@ -1,6 +1,7 @@
 package pipeline
 
 import (
+	"fmt"
 	"log"
 	"strings"
 
@@ -39,6 +40,14 @@ func Run(events <-chan event.Event, decisionEngine *decision.Engine, auditMonito
 
 		// Skip events if neither the process nor its parent is in our watchlist.
 		if !tracker.Exists(e.PID) && !tracker.Exists(e.PPID) {
+			if e.Type == event.EventConnect || e.Type == event.EventOpenat {
+				log.Printf("Debug: dropped before resolve type=%s pid=%d ppid=%d comm=%s tracker_pid=%t tracker_ppid=%t root_pid=%t root_ppid=%t addr=%s port=%d path=%s",
+					e.Type.String(), e.PID, e.PPID, e.Comm,
+					tracker.Exists(e.PID), tracker.Exists(e.PPID),
+					tracker.IsRoot(e.PID), tracker.IsRoot(e.PPID),
+					e.Addr, e.Port, e.Path,
+				)
+			}
 			auditMonitor.DiscardEvent(e)
 			continue
 		}
@@ -50,6 +59,19 @@ func Run(events <-chan event.Event, decisionEngine *decision.Engine, auditMonito
 			decisionEngine.LineageMaxDepth(),
 		)
 		if !ok {
+			if e.Type == event.EventConnect || e.Type == event.EventOpenat {
+				lineageParts := make([]string, 0, len(lineage.Nodes))
+				for _, n := range lineage.Nodes {
+					lineageParts = append(lineageParts, fmt.Sprintf("%d/%s(ppid=%d)", n.PID, n.Comm, n.PPID))
+				}
+				log.Printf("Debug: resolve failed type=%s pid=%d ppid=%d comm=%s root_pid=%t root_ppid=%t hints=%s lineage=%s addr=%s port=%d path=%s",
+					e.Type.String(), e.PID, e.PPID, e.Comm,
+					tracker.IsRoot(e.PID), tracker.IsRoot(e.PPID),
+					sessionTracker.DebugRootHints(e.PID, e.Time),
+					strings.Join(lineageParts, " -> "),
+					e.Addr, e.Port, e.Path,
+				)
+			}
 			auditMonitor.DiscardEvent(e)
 			continue
 		}
