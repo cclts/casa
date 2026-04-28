@@ -5,10 +5,10 @@
     "max_per_process_artifacts": 16,
 
     "deep_chain_threshold": 5,
-    "burst_connect_threshold": 3,
-    "burst_exec_threshold": 3,
+    "burst_connect_threshold": 5,
+    "burst_exec_threshold": 5,
     "burst_window_seconds": 10,
-    "sensitive_history_window_seconds": 30,
+    "sensitive_history_window_seconds": 10,
 
     "suspicious_path_patterns": [
       "/tmp/",

@@ -1,6 +1,8 @@
 package context
 
 import (
+	"net/netip"
+
 	"github.com/cclts/casa/user/internal/event"
 )
 
@@ -120,6 +122,9 @@ func detectBurstEvent(events []ObservedEvent, targetPID uint32, eventType event.
 		if evt.PID != targetPID || evt.Type != eventType {
 			continue
 		}
+		if eventType == event.EventConnect && shouldIgnoreBurstConnect(evt) {
+			continue
+		}
 
 		window = append(window, evt)
 		if len(window) < threshold {
@@ -133,6 +138,56 @@ func detectBurstEvent(events []ObservedEvent, targetPID uint32, eventType event.
 	}
 
 	return false
+}
+
+func shouldIgnoreBurstConnect(evt ObservedEvent) bool {
+	if evt.Type != event.EventConnect {
+		return false
+	}
+
+	addr, err := netip.ParseAddr(normalizePath(evt.Addr))
+	if err != nil {
+		return false
+	}
+
+	if addr.IsLoopback() {
+		return true
+	}
+
+	if addr.Is4() {
+		if inPrefix(addr, "169.254.0.0/16") ||
+			inPrefix(addr, "10.0.0.0/8") ||
+			inPrefix(addr, "172.16.0.0/12") ||
+			inPrefix(addr, "192.168.0.0/16") {
+			return true
+		}
+	}
+
+	// Local stub resolvers commonly sit on loopback or private/link-local
+	// addresses; they should not contribute to burst-connect detection.
+	if evt.Port == 53 && (addr.IsLoopback() || isPrivateOrLinkLocal(addr)) {
+		return true
+	}
+
+	return false
+}
+
+func isPrivateOrLinkLocal(addr netip.Addr) bool {
+	if !addr.IsValid() {
+		return false
+	}
+	if addr.Is4() {
+		return inPrefix(addr, "169.254.0.0/16") ||
+			inPrefix(addr, "10.0.0.0/8") ||
+			inPrefix(addr, "172.16.0.0/12") ||
+			inPrefix(addr, "192.168.0.0/16")
+	}
+	return addr == netip.MustParseAddr("::1")
+}
+
+func inPrefix(addr netip.Addr, cidr string) bool {
+	prefix := netip.MustParsePrefix(cidr)
+	return prefix.Contains(addr)
 }
 
 func uniqueOpenPathCount(items []ObservedOpen) int {

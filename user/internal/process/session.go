@@ -6,6 +6,8 @@ import (
 	"time"
 )
 
+const rootEventSessionFallbackWindow = 10 * time.Second
+
 // SessionID identifies the worker-level session boundary currently used by the pipeline.
 type SessionID uint32
 
@@ -50,13 +52,9 @@ func (st *SessionTracker) ResolveSession(pid uint32, eventTime time.Time, maxDep
 
 	// Today a session is anchored at the OpenClaw worker node beneath a tracked root.
 	// This keeps aggregation stable across child processes and execve boundaries.
-	// Also allow the tracked root itself to be the session anchor when it is the
-	// OpenClaw process issuing the observed event directly.
 	for _, n := range lineage.Nodes {
-		if !strings.HasPrefix(n.Comm, "openclaw") {
-			continue
-		}
-		if st.tracker.IsRoot(uint32(n.PID)) || st.tracker.IsRoot(uint32(n.PPID)) {
+		if st.tracker.IsRoot(uint32(n.PPID)) &&
+			strings.HasPrefix(n.Comm, "openclaw") {
 			sessionPID = uint32(n.PID)
 			found = true
 			break
@@ -69,6 +67,19 @@ func (st *SessionTracker) ResolveSession(pid uint32, eventTime time.Time, maxDep
 
 	st.mu.Lock()
 	defer st.mu.Unlock()
+
+	if !found && st.tracker.IsRoot(pid) {
+		sess, ok := st.findRecentActiveSessionLocked(eventTime)
+		if !ok {
+			return nil, lineage, false
+		}
+		sess.LastSeen = eventTime
+		return sess, lineage, true
+	}
+
+	if !found {
+		return nil, lineage, false
+	}
 
 	// get or create session
 	sess, ok := st.sessions[sessionPID]
@@ -94,6 +105,28 @@ func (st *SessionTracker) ResolveSession(pid uint32, eventTime time.Time, maxDep
 	}
 
 	return sess, lineage, true
+}
+
+func (st *SessionTracker) findRecentActiveSessionLocked(now time.Time) (*Session, bool) {
+	var match *Session
+
+	for _, sess := range st.sessions {
+		if sess == nil || sess.IsClosed {
+			continue
+		}
+		if now.Sub(sess.LastSeen) > rootEventSessionFallbackWindow {
+			continue
+		}
+		if match != nil {
+			return nil, false
+		}
+		match = sess
+	}
+
+	if match == nil {
+		return nil, false
+	}
+	return match, true
 }
 
 // HandleExit marks a tracked process as exited and closes the session when its anchor exits.
