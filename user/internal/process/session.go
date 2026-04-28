@@ -50,9 +50,13 @@ func (st *SessionTracker) ResolveSession(pid uint32, eventTime time.Time, maxDep
 
 	// Today a session is anchored at the OpenClaw worker node beneath a tracked root.
 	// This keeps aggregation stable across child processes and execve boundaries.
+	// Also allow the tracked root itself to be the session anchor when it is the
+	// OpenClaw process issuing the observed event directly.
 	for _, n := range lineage.Nodes {
-		if st.tracker.IsRoot(uint32(n.PPID)) &&
-			strings.HasPrefix(n.Comm, "openclaw") {
+		if !strings.HasPrefix(n.Comm, "openclaw") {
+			continue
+		}
+		if st.tracker.IsRoot(uint32(n.PID)) || st.tracker.IsRoot(uint32(n.PPID)) {
 			sessionPID = uint32(n.PID)
 			found = true
 			break

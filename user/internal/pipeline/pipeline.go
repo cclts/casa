@@ -2,6 +2,7 @@ package pipeline
 
 import (
 	"log"
+	"strings"
 
 	"github.com/cclts/casa/user/internal/audit"
 	"github.com/cclts/casa/user/internal/context"
@@ -56,7 +57,7 @@ func Run(events <-chan event.Event, decisionEngine *decision.Engine, auditMonito
 		if e.Type != event.EventExit {
 			securityStore.Ensure(e.PID)
 		}
-		
+
 		switch e.Type {
 		case event.EventExecve:
 			fullArgs := ""
