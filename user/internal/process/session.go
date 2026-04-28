@@ -82,8 +82,8 @@ func (st *SessionTracker) ResolveSession(pid uint32, eventTime time.Time, maxDep
 	st.mu.Lock()
 	defer st.mu.Unlock()
 
-	if !found && st.tracker.IsRoot(pid) {
-		sess, ok := st.resolveRootEventLocked(pid, eventTime)
+	if !found && rootPID != 0 {
+		sess, ok := st.resolveRootEventLocked(rootPID, eventTime)
 		if !ok {
 			return nil, lineage, false
 		}
@@ -151,7 +151,7 @@ func (st *SessionTracker) resolveRootEventLocked(rootPID uint32, now time.Time) 
 	if len(candidates) == 1 {
 		for sessionPID := range candidates {
 			sess, ok := st.sessions[sessionPID]
-			if !ok || sess == nil || sess.IsClosed {
+			if !ok || sess == nil || !sessionEligibleForRootAttribution(sess, now) {
 				return nil, false
 			}
 			return sess, true
@@ -181,7 +181,7 @@ func (st *SessionTracker) resolveRootEventLocked(rootPID uint32, now time.Time) 
 	}
 
 	sess, ok := st.sessions[bestSessionPID]
-	if !ok || sess == nil || sess.IsClosed {
+	if !ok || sess == nil || !sessionEligibleForRootAttribution(sess, now) {
 		return nil, false
 	}
 	return sess, true
@@ -197,6 +197,19 @@ func (st *SessionTracker) recordRootHintLocked(rootPID uint32, sessionPID uint32
 		hints = hints[len(hints)-rootAttributionHistoryLimit:]
 	}
 	st.rootHints[rootPID] = hints
+}
+
+func sessionEligibleForRootAttribution(sess *Session, now time.Time) bool {
+	if sess == nil {
+		return false
+	}
+	if !sess.IsClosed {
+		return true
+	}
+	if sess.ClosedAt.IsZero() {
+		return false
+	}
+	return now.Sub(sess.ClosedAt) <= rootAttributionWindow
 }
 
 // DebugRootHints returns a human-readable snapshot of the current attribution
