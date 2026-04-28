@@ -82,7 +82,7 @@ if [[ -z "$CASA_PID" ]]; then
   exit 1
 fi
 
-if ! kill -0 "$CASA_PID" 2>/dev/null; then
+if [[ ! -d "/proc/$CASA_PID" ]] && ! ps -p "$CASA_PID" >/dev/null 2>&1; then
   echo "CASA pid $CASA_PID is not running" >&2
   exit 1
 fi
@@ -181,7 +181,7 @@ resource_sampler() {
   local interval="$4"
 
   while true; do
-    if ! kill -0 "$pid" 2>/dev/null; then
+    if [[ ! -d "/proc/$pid" ]] && ! ps -p "$pid" >/dev/null 2>&1; then
       break
     fi
 
