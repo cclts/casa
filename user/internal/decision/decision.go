@@ -23,11 +23,11 @@ type Profile struct {
 
 // Result is the final decision payload emitted after risk evaluation.
 type Result struct {
-	Profile       Profile
-	Score         int
-	Action        Action
-	Triggered     []rules.TriggeredRule
-	LogThreshold  int
+	Profile        Profile
+	Score          int
+	Action         Action
+	Triggered      []rules.TriggeredRule
+	LogThreshold   int
 	AlertThreshold int
 }
 
@@ -72,6 +72,11 @@ func (e *Engine) LineageMaxDepth() int {
 	return e.ruleEngine.ConfigSnapshot().Analysis.LineageMaxDepth
 }
 
+// AnalysisConfig exposes the currently active non-rule analysis knobs.
+func (e *Engine) AnalysisConfig() rules.AnalysisConfig {
+	return e.ruleEngine.ConfigSnapshot().Analysis
+}
+
 // Reload refreshes the backing rule configuration without restarting the process.
 func (e *Engine) Reload() error {
 	return e.ruleEngine.Reload()
@@ -88,14 +93,14 @@ func BuildProfile(ctx context.Context, _ int) Profile {
 		"session_id": int64(ctx.SessionID),
 		"target_pid": int64(ctx.TargetPID),
 		"execution": map[string]any{
-			"suspicious_path_exec":      ctx.Execution.SuspiciousPathExec,
-			"chain_depth":               int64(ctx.Execution.ChainDepth),
-			"deep_chain":                ctx.Execution.DeepChain,
-			"shell_in_chain":            ctx.Execution.ShellInChain,
-			"network_tool_in_chain":     ctx.Execution.NetworkToolInChain,
-			"interpreter_in_chain":      ctx.Execution.InterpreterInChain,
+			"suspicious_path_exec":       ctx.Execution.SuspiciousPathExec,
+			"chain_depth":                int64(ctx.Execution.ChainDepth),
+			"deep_chain":                 ctx.Execution.DeepChain,
+			"shell_in_chain":             ctx.Execution.ShellInChain,
+			"network_tool_in_chain":      ctx.Execution.NetworkToolInChain,
+			"interpreter_in_chain":       ctx.Execution.InterpreterInChain,
 			"container_runtime_in_chain": ctx.Execution.ContainerRuntimeInChain,
-			"memfd_or_deleted_exec":     ctx.Execution.MemfdOrDeletedExec,
+			"memfd_or_deleted_exec":      ctx.Execution.MemfdOrDeletedExec,
 		},
 		"capability": map[string]any{
 			"has_dangerous_caps": ctx.Capability.HasDangerousCaps,
@@ -103,15 +108,15 @@ func BuildProfile(ctx context.Context, _ int) Profile {
 			"seccomp_disabled":   !ctx.Capability.CapabilityUnknown && ctx.Capability.SeccompDisabled,
 		},
 		"history": map[string]any{
-			"connect_then_exec":     ctx.History.ConnectThenExec,
+			"connect_then_exec":      ctx.History.ConnectThenExec,
 			"sensitive_then_network": ctx.History.SensitiveThenNetwork,
-			"sensitive_then_execve": ctx.History.SensitiveThenExecve,
-			"burst_connect":         ctx.History.BurstConnect,
-			"burst_exec":            ctx.History.BurstExec,
+			"sensitive_then_execve":  ctx.History.SensitiveThenExecve,
+			"burst_connect":          ctx.History.BurstConnect,
+			"burst_exec":             ctx.History.BurstExec,
 			"unique_open_path_count": int64(ctx.History.UniqueOpenPathCount),
-			"exec_count":            int64(ctx.History.ExecCount),
-			"open_count":            int64(ctx.History.OpenCount),
-			"connect_count":         int64(ctx.History.ConnectCount),
+			"exec_count":             int64(ctx.History.ExecCount),
+			"open_count":             int64(ctx.History.OpenCount),
+			"connect_count":          int64(ctx.History.ConnectCount),
 		},
 		"file": map[string]any{
 			"write_then_exec_same_path": ctx.File.WriteThenExecSamePath,

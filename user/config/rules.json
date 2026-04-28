@@ -1,40 +1,158 @@
 {
   "analysis": {
-    "lineage_max_depth": 4
+    "lineage_max_depth": 6,
+    "recent_event_limit": 64,
+    "max_per_process_artifacts": 16,
+
+    "deep_chain_threshold": 5,
+    "burst_connect_threshold": 3,
+    "burst_exec_threshold": 3,
+    "burst_window_seconds": 10,
+    "sensitive_history_window_seconds": 30,
+
+    "suspicious_path_patterns": [
+      "/tmp/",
+      "/var/tmp/",
+      "/dev/shm/",
+      "/run/user/",
+      "/proc/self/fd/",
+      "/proc/"
+    ],
+
+    "sensitive_path_prefixes": [
+      "/root/",
+      "/var/run/secrets/",
+      "/run/secrets/",
+      "/var/lib/kubelet/",
+      "/var/lib/docker/",
+      "/var/lib/containerd/"
+    ],
+
+    "sensitive_path_patterns": [
+      "/etc/passwd",
+      "/etc/shadow",
+      "/etc/sudoers",
+      "/.ssh/",
+      "/.gnupg/",
+      "/.aws/",
+      "/.azure/",
+      "/.gcloud/",
+      "/.kube/",
+      "/.docker/",
+      "/.config/openclaw/",
+      "/.npmrc",
+      "/.pypirc",
+      "/.netrc",
+      "/id_rsa",
+      "/id_ed25519",
+      "/authorized_keys",
+      "/known_hosts",
+      "/credentials",
+      "/credentials.json",
+      "/token",
+      "/secret",
+      "/passwd",
+      "/shadow",
+      ".env",
+      ".pem",
+      ".key"
+    ],
+
+    "shell_names": [
+      "sh",
+      "bash",
+      "zsh",
+      "dash",
+      "ksh",
+      "fish"
+    ],
+
+    "network_tool_names": [
+      "curl",
+      "wget",
+      "nc",
+      "netcat",
+      "ncat",
+      "socat",
+      "ssh",
+      "scp",
+      "rsync"
+    ],
+
+    "interpreter_names": [
+      "python",
+      "python3",
+      "perl",
+      "ruby",
+      "node",
+      "php",
+      "lua",
+      "bash",
+      "sh",
+      "dash",
+      "zsh"
+    ],
+
+    "container_runtime_names": [
+      "docker",
+      "containerd",
+      "ctr",
+      "runc",
+      "crun",
+      "podman",
+      "nerdctl"
+    ]
   },
+
   "thresholds": {
-    "log": 0,
+    "log": 2,
     "alert": 10
   },
+
   "rules": [
     {
-      "name": "exec_from_suspicious_path",
-      "description": "Execution came from a suspicious path such as tmp, shm, memfd, or a deleted binary.",
-      "expr": "execution.suspicious_path_exec",
+      "name": "memfd_or_deleted_execution",
+      "description": "Execution from memfd or deleted binary path.",
+      "expr": "execution.memfd_or_deleted_exec",
       "weight": 5,
       "enabled": true
     },
     {
-      "name": "deep_shell_chain",
-      "description": "Execution happened in a deep process chain that contains a shell.",
-      "expr": "execution.deep_chain && execution.shell_in_chain",
-      "weight": 4,
-      "enabled": true
-    },
-    {
-      "name": "download_then_exec",
-      "description": "Network activity followed by execution in a chain that includes a network tool.",
-      "expr": "history.connect_then_exec && execution.network_tool_in_chain",
+      "name": "deleted_or_memfd_with_shell",
+      "description": "Deleted or memfd execution appears with shell lineage.",
+      "expr": "execution.memfd_or_deleted_exec && execution.shell_in_chain",
       "weight": 6,
       "enabled": true
     },
     {
-      "name": "interpreter_network_exec",
-      "description": "Interpreter-backed execution after network activity.",
-      "expr": "history.connect_then_exec && execution.interpreter_in_chain",
-      "weight": 5,
+      "name": "deep_shell_chain",
+      "description": "Shell appears in a deep execution chain.",
+      "expr": "execution.deep_chain && execution.shell_in_chain",
+      "weight": 3,
       "enabled": true
     },
+    {
+      "name": "network_tool_in_shell_chain",
+      "description": "Network tool appears in a shell-based execution chain.",
+      "expr": "execution.shell_in_chain && execution.network_tool_in_chain",
+      "weight": 2,
+      "enabled": true
+    },
+    {
+      "name": "interpreter_from_deep_chain",
+      "description": "Interpreter execution appears inside a deep process lineage.",
+      "expr": "execution.deep_chain && execution.interpreter_in_chain",
+      "weight": 1,
+      "enabled": true
+    },
+    {
+      "name": "container_runtime_in_chain",
+      "description": "Container runtime appears in the execution lineage.",
+      "expr": "execution.container_runtime_in_chain",
+      "weight": 2,
+      "enabled": true
+    },
+
     {
       "name": "dangerous_caps_no_seccomp",
       "description": "Process has dangerous capabilities and seccomp is disabled.",
@@ -42,53 +160,121 @@
       "weight": 5,
       "enabled": true
     },
+
     {
       "name": "sensitive_file_then_network",
       "description": "Sensitive file access followed by outbound network behavior.",
       "expr": "history.sensitive_then_network",
-      "weight": 6,
-      "enabled": true
-    },
-    {
-      "name": "sensitive_file_then_exec",
-      "description": "Sensitive file access followed by execve in the same process history.",
-      "expr": "history.sensitive_then_execve",
-      "weight": 6,
-      "enabled": true
-    },
-    {
-      "name": "burst_connect_from_container_runtime",
-      "description": "Burst network behavior in a chain that includes a container runtime.",
-      "expr": "history.burst_connect && execution.container_runtime_in_chain",
       "weight": 4,
       "enabled": true
     },
     {
+      "name": "sensitive_file_then_exec",
+      "description": "Sensitive file access followed by execve in the same session history.",
+      "expr": "history.sensitive_then_execve",
+      "weight": 4,
+      "enabled": true
+    },
+    {
+      "name": "connect_then_exec",
+      "description": "Network activity is followed by process execution.",
+      "expr": "history.connect_then_exec",
+      "weight": 3,
+      "enabled": true
+    },
+    {
+      "name": "agent_exfiltration_pattern",
+      "description": "Sensitive file access followed by network activity from shell or interpreter lineage.",
+      "expr": "history.sensitive_then_network && (execution.shell_in_chain || execution.interpreter_in_chain)",
+      "weight": 4,
+      "enabled": true
+    },
+
+    {
+      "name": "shell_network_behavior",
+      "description": "Shell lineage performs outbound network activity.",
+      "expr": "execution.shell_in_chain && history.connect_count >= 1",
+      "weight": 5,
+      "enabled": true
+    },
+    {
+      "name": "network_tool_download_execute",
+      "description": "Network tool appears in a chain that connects and later executes.",
+      "expr": "history.connect_then_exec && execution.network_tool_in_chain",
+      "weight": 2,
+      "enabled": true
+    },
+    {
+      "name": "shell_download_execute",
+      "description": "Shell chain with network activity followed by suspicious-path execution.",
+      "expr": "history.connect_then_exec && execution.shell_in_chain && execution.suspicious_path_exec",
+      "weight": 4,
+      "enabled": true
+    },
+
+    {
+      "name": "burst_network_from_deep_chain",
+      "description": "Deep execution chain followed by bursty network activity.",
+      "expr": "execution.deep_chain && history.burst_connect",
+      "weight": 4,
+      "enabled": true
+    },
+    {
+      "name": "network_scan_burst",
+      "description": "Session performs bursty outbound connections.",
+      "expr": "history.burst_connect",
+      "weight": 6,
+      "enabled": true
+    },
+    {
+      "name": "burst_exec_from_shell_chain",
+      "description": "Shell lineage creates a burst of executions.",
+      "expr": "execution.shell_in_chain && history.burst_exec",
+      "weight": 4,
+      "enabled": true
+    },
+
+    {
+      "name": "many_unique_open_paths",
+      "description": "Session touches many unique file paths.",
+      "expr": "history.unique_open_path_count >= 50",
+      "weight": 2,
+      "enabled": true
+    },
+    {
+      "name": "heavy_file_discovery",
+      "description": "Session performs many open operations across many unique paths.",
+      "expr": "history.open_count >= 20 && history.unique_open_path_count >= 30",
+      "weight": 3,
+      "enabled": true
+    },
+
+    {
       "name": "write_then_exec_same_path",
-      "description": "Process wrote and then executed the same path.",
+      "description": "File is written and later executed from the same path.",
       "expr": "file.write_then_exec_same_path",
-      "weight": 7,
+      "weight": 6,
+      "enabled": true
+    },
+    {
+      "name": "write_then_temp_exec",
+      "description": "File is written and later executed from a suspicious temp-like path.",
+      "expr": "file.write_then_exec_same_path && execution.suspicious_path_exec",
+      "weight": 5,
       "enabled": true
     },
     {
       "name": "opened_deleted_path",
-      "description": "Process opened a path that was already deleted.",
+      "description": "Process opens a deleted file path.",
       "expr": "file.opened_deleted_path",
       "weight": 4,
       "enabled": true
     },
     {
-      "name": "many_unique_open_paths",
-      "description": "Process touched many distinct file paths in a short history window.",
-      "expr": "history.unique_open_path_count >= 6",
-      "weight": 2,
-      "enabled": true
-    },
-    {
-      "name": "burst_exec_after_network",
-      "description": "Bursty exec behavior after network activity.",
-      "expr": "history.connect_count >= 1 && history.burst_exec",
-      "weight": 3,
+      "name": "temp_exec_after_sensitive_access",
+      "description": "Suspicious-path execution after sensitive file access.",
+      "expr": "execution.suspicious_path_exec && history.sensitive_then_execve",
+      "weight": 6,
       "enabled": true
     }
   ]

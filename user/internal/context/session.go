@@ -116,7 +116,7 @@ func newSessionState(id uint32, createdAt time.Time) *SessionState {
 	return &SessionState{
 		ID:                     id,
 		Processes:              make(map[uint32]*ProcessState),
-		RecentEvents:           make([]ObservedEvent, 0, defaultRecentEventLimit),
+		RecentEvents:           make([]ObservedEvent, 0, CurrentHeuristics().RecentEventLimit),
 		UniqueConnectEndpoints: make([]Endpoint, 0, 8),
 		CreatedAt:              createdAt,
 		UpdatedAt:              createdAt,

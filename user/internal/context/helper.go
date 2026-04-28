@@ -3,110 +3,7 @@ package context
 import (
 	"path/filepath"
 	"strings"
-	"time"
 )
-
-const (
-	// Keep only a bounded slice of recent history so per-session memory stays predictable.
-	defaultRecentEventLimit = 64
-	maxPerProcessArtifacts  = 16
-	deepChainThreshold      = 4
-	burstConnectThreshold   = 3
-	burstExecThreshold      = 3
-)
-
-var burstWindow = 10 * time.Second
-
-var suspiciousPathPatterns = []string{
-	"/tmp/",
-	"/var/tmp/",
-	"/dev/shm/",
-	"/run/user/",
-	"/proc/self/fd/",
-}
-
-var sensitivePathPrefixes = []string{
-	"/etc/",
-	"/root/",
-	"/home/",
-	"/proc/",
-	"/sys/",
-	"/var/run/secrets/",
-	"/run/secrets/",
-	"/var/lib/kubelet/",
-	"/var/lib/docker/",
-	"/var/lib/containerd/",
-}
-
-var sensitivePathPatterns = []string{
-	"/.ssh/",
-	"/.gnupg/",
-	"/.aws/",
-	"/.azure/",
-	"/.gcloud/",
-	"/.kube/",
-	"/.docker/",
-	"/.config/",
-	"/.npmrc",
-	"/.pypirc",
-	"/.netrc",
-	"/id_rsa",
-	"/id_ed25519",
-	"/authorized_keys",
-	"/known_hosts",
-	"/credentials",
-	"/credentials.json",
-	"/token",
-	"/secret",
-	"/passwd",
-	"/shadow",
-	".env",
-}
-
-var shellNames = map[string]struct{}{
-	"sh":   {},
-	"bash": {},
-	"zsh":  {},
-	"dash": {},
-	"ksh":  {},
-	"fish": {},
-}
-
-var networkToolNames = map[string]struct{}{
-	"curl":    {},
-	"wget":    {},
-	"nc":      {},
-	"netcat":  {},
-	"ncat":    {},
-	"socat":   {},
-	"ssh":     {},
-	"scp":     {},
-	"rsync":   {},
-}
-
-var interpreterNames = map[string]struct{}{
-	"python":  {},
-	"python3": {},
-	"perl":    {},
-	"ruby":    {},
-	"node":    {},
-	"php":     {},
-	"lua":     {},
-	"bash":    {},
-	"sh":      {},
-	"dash":    {},
-	"zsh":     {},
-}
-
-var containerRuntimeNames = map[string]struct{}{
-	"docker":     {},
-	"containerd": {},
-	"ctr":        {},
-	"runc":       {},
-	"crun":       {},
-	"podman":     {},
-	"nerdctl":    {},
-}
 
 // isSuspiciousPath marks common execution locations used by fileless or short-lived payloads.
 func isSuspiciousPath(path string) bool {
@@ -115,7 +12,7 @@ func isSuspiciousPath(path string) bool {
 		return false
 	}
 
-	for _, pattern := range suspiciousPathPatterns {
+	for _, pattern := range CurrentHeuristics().SuspiciousPathPatterns {
 		if strings.Contains(lower, pattern) {
 			return true
 		}
@@ -131,13 +28,13 @@ func isSensitivePath(path string) bool {
 		return false
 	}
 
-	for _, prefix := range sensitivePathPrefixes {
+	for _, prefix := range CurrentHeuristics().SensitivePathPrefixes {
 		if strings.HasPrefix(lower, prefix) {
 			return true
 		}
 	}
 
-	for _, pattern := range sensitivePathPatterns {
+	for _, pattern := range CurrentHeuristics().SensitivePathPatterns {
 		if strings.Contains(lower, pattern) {
 			return true
 		}
@@ -161,18 +58,20 @@ func isDeletedPath(path string) bool {
 
 // trimOpenEvents keeps only the latest open artifacts for pattern matching.
 func trimOpenEvents(items []ObservedOpen) []ObservedOpen {
-	if len(items) <= maxPerProcessArtifacts {
+	limit := CurrentHeuristics().MaxPerProcessArtifacts
+	if len(items) <= limit {
 		return items
 	}
-	return items[len(items)-maxPerProcessArtifacts:]
+	return items[len(items)-limit:]
 }
 
 // trimConnectEvents keeps only the latest connect artifacts for pattern matching.
 func trimConnectEvents(items []ObservedConnect) []ObservedConnect {
-	if len(items) <= maxPerProcessArtifacts {
+	limit := CurrentHeuristics().MaxPerProcessArtifacts
+	if len(items) <= limit {
 		return items
 	}
-	return items[len(items)-maxPerProcessArtifacts:]
+	return items[len(items)-limit:]
 }
 
 // appendUniqueEndpoint keeps a bounded de-duplicated set of recent remote destinations per session.
@@ -184,10 +83,11 @@ func appendUniqueEndpoint(items []Endpoint, endpoint Endpoint) []Endpoint {
 	}
 
 	items = append(items, endpoint)
-	if len(items) <= maxPerProcessArtifacts {
+	limit := CurrentHeuristics().MaxPerProcessArtifacts
+	if len(items) <= limit {
 		return items
 	}
-	return items[len(items)-maxPerProcessArtifacts:]
+	return items[len(items)-limit:]
 }
 
 // trimRecentEvents bounds session-level history used for historical context generation.
@@ -206,6 +106,14 @@ func lineageHasCommand(lineage []LineageNode, names map[string]struct{}) bool {
 		}
 	}
 	return false
+}
+
+func nameSet(items []string) map[string]struct{} {
+	out := make(map[string]struct{}, len(items))
+	for _, item := range items {
+		out[normalizePath(item)] = struct{}{}
+	}
+	return out
 }
 
 func openHasWriteIntent(flags uint32) bool {

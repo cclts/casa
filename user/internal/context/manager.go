@@ -19,7 +19,7 @@ type Manager struct {
 func NewManager() *Manager {
 	return &Manager{
 		sessions:         make(map[uint32]*SessionState),
-		recentEventLimit: defaultRecentEventLimit,
+		recentEventLimit: CurrentHeuristics().RecentEventLimit,
 	}
 }
 

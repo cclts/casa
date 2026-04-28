@@ -2,6 +2,7 @@ package pipeline
 
 import (
 	"log"
+	"time"
 
 	"github.com/cclts/casa/user/internal/audit"
 	"github.com/cclts/casa/user/internal/context"
@@ -13,6 +14,24 @@ import (
 // Run is the main user-space analysis loop. It enriches events with process state,
 // derives context, evaluates risk, and writes audit records.
 func Run(events <-chan event.Event, decisionEngine *decision.Engine, auditMonitor *audit.Monitor) {
+	analysis := decisionEngine.AnalysisConfig()
+	context.ConfigureHeuristics(context.Heuristics{
+		RecentEventLimit:       analysis.RecentEventLimit,
+		MaxPerProcessArtifacts: analysis.MaxPerProcessArtifacts,
+		DeepChainThreshold:     analysis.DeepChainThreshold,
+		BurstConnectThreshold:  analysis.BurstConnectThreshold,
+		BurstExecThreshold:     analysis.BurstExecThreshold,
+		BurstWindow:            time.Duration(analysis.BurstWindowSeconds) * time.Second,
+		SensitiveHistoryWindow: time.Duration(analysis.SensitiveHistoryWindowSecs) * time.Second,
+		SuspiciousPathPatterns: analysis.SuspiciousPathPatterns,
+		SensitivePathPrefixes:  analysis.SensitivePathPrefixes,
+		SensitivePathPatterns:  analysis.SensitivePathPatterns,
+		ShellNames:             analysis.ShellNames,
+		NetworkToolNames:       analysis.NetworkToolNames,
+		InterpreterNames:       analysis.InterpreterNames,
+		ContainerRuntimeNames:  analysis.ContainerRuntimeNames,
+	})
+
 	tracker := process.NewTracker()
 	sessionTracker := process.NewSessionTracker(tracker)
 	securityStore := process.NewSecurityStore()

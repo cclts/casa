@@ -2,6 +2,7 @@ package context
 
 // buildExecutionChainContext projects lineage and execution metadata into derived facts.
 func buildExecutionChainContext(procState *ProcessState) ExecutionContext {
+	heuristics := CurrentHeuristics()
 	lineage := append([]LineageNode(nil), procState.Lineage...)
 	if len(lineage) == 0 {
 		lineage = []LineageNode{{
@@ -17,11 +18,11 @@ func buildExecutionChainContext(procState *ProcessState) ExecutionContext {
 		UID:                     procState.UID,
 		ChainDepth:              procState.LineageDepth,
 		SuspiciousPathExec:      isSuspiciousPath(procState.ExecPath),
-		DeepChain:               procState.LineageDepth >= deepChainThreshold,
-		ShellInChain:            lineageHasCommand(lineage, shellNames),
-		NetworkToolInChain:      lineageHasCommand(lineage, networkToolNames),
-		InterpreterInChain:      lineageHasCommand(lineage, interpreterNames),
-		ContainerRuntimeInChain: lineageHasCommand(lineage, containerRuntimeNames),
+		DeepChain:               procState.LineageDepth >= heuristics.DeepChainThreshold,
+		ShellInChain:            lineageHasCommand(lineage, nameSet(heuristics.ShellNames)),
+		NetworkToolInChain:      lineageHasCommand(lineage, nameSet(heuristics.NetworkToolNames)),
+		InterpreterInChain:      lineageHasCommand(lineage, nameSet(heuristics.InterpreterNames)),
+		ContainerRuntimeInChain: lineageHasCommand(lineage, nameSet(heuristics.ContainerRuntimeNames)),
 		MemfdOrDeletedExec:      isMemfdOrDeletedPath(procState.ExecPath),
 	}
 }

@@ -18,7 +18,21 @@ type Config struct {
 
 // AnalysisConfig holds non-rule knobs that still belong to the same policy source of truth.
 type AnalysisConfig struct {
-	LineageMaxDepth int `json:"lineage_max_depth"`
+	LineageMaxDepth            int      `json:"lineage_max_depth"`
+	RecentEventLimit           int      `json:"recent_event_limit,omitempty"`
+	MaxPerProcessArtifacts     int      `json:"max_per_process_artifacts,omitempty"`
+	DeepChainThreshold         int      `json:"deep_chain_threshold,omitempty"`
+	BurstConnectThreshold      int      `json:"burst_connect_threshold,omitempty"`
+	BurstExecThreshold         int      `json:"burst_exec_threshold,omitempty"`
+	BurstWindowSeconds         int      `json:"burst_window_seconds,omitempty"`
+	SensitiveHistoryWindowSecs int      `json:"sensitive_history_window_seconds,omitempty"`
+	SuspiciousPathPatterns     []string `json:"suspicious_path_patterns,omitempty"`
+	SensitivePathPrefixes      []string `json:"sensitive_path_prefixes,omitempty"`
+	SensitivePathPatterns      []string `json:"sensitive_path_patterns,omitempty"`
+	ShellNames                 []string `json:"shell_names,omitempty"`
+	NetworkToolNames           []string `json:"network_tool_names,omitempty"`
+	InterpreterNames           []string `json:"interpreter_names,omitempty"`
+	ContainerRuntimeNames      []string `json:"container_runtime_names,omitempty"`
 }
 
 // Thresholds defines the cutoffs that map numeric score to a decision action.

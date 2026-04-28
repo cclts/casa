@@ -40,8 +40,8 @@ func buildHistoricalContext(state *SessionState, targetPID uint32) HistoricalCon
 		ConnectThenExec:      detectConnectThenExec(state.RecentEvents, targetPID),
 		SensitiveThenNetwork: detectSensitiveThenNetwork(procState),
 		SensitiveThenExecve:  detectSensitiveThenExecve(state.RecentEvents, procState, targetPID),
-		BurstConnect:         detectBurstEvent(state.RecentEvents, targetPID, event.EventConnect, burstConnectThreshold),
-		BurstExec:            detectBurstEvent(state.RecentEvents, targetPID, event.EventExecve, burstExecThreshold),
+		BurstConnect:         detectBurstEvent(state.RecentEvents, targetPID, event.EventConnect, CurrentHeuristics().BurstConnectThreshold),
+		BurstExec:            detectBurstEvent(state.RecentEvents, targetPID, event.EventExecve, CurrentHeuristics().BurstExecThreshold),
 		UniqueOpenPathCount:  uniqueOpenPathCount(procState.Opens),
 	}
 }
@@ -64,16 +64,21 @@ func detectConnectThenExec(events []ObservedEvent, targetPID uint32) bool {
 }
 
 func detectSensitiveThenNetwork(procState *ProcessState) bool {
-	var seenSensitive bool
-
+	window := CurrentHeuristics().SensitiveHistoryWindow
 	for _, open := range procState.Opens {
-		if isSensitivePath(open.Path) {
-			seenSensitive = true
-			break
+		if !isSensitivePath(open.Path) {
+			continue
+		}
+		for _, conn := range procState.Connects {
+			if conn.Time.Before(open.Time) {
+				continue
+			}
+			if window <= 0 || conn.Time.Sub(open.Time) <= window {
+				return true
+			}
 		}
 	}
-
-	return seenSensitive && len(procState.Connects) > 0
+	return false
 }
 
 func detectSensitiveThenExecve(events []ObservedEvent, procState *ProcessState, targetPID uint32) bool {
@@ -82,15 +87,22 @@ func detectSensitiveThenExecve(events []ObservedEvent, procState *ProcessState, 
 	}
 
 	var seenSensitive bool
+	var sensitiveAtUnix int64
+	windowSeconds := int64(CurrentHeuristics().SensitiveHistoryWindow.Seconds())
 	for _, evt := range events {
 		if evt.PID != targetPID {
 			continue
 		}
 		if evt.Type == event.EventOpenat && isSensitivePath(evt.Path) {
 			seenSensitive = true
+			sensitiveAtUnix = evt.Time.Unix()
 			continue
 		}
 		if seenSensitive && evt.Type == event.EventExecve {
+			if windowSeconds > 0 && evt.Time.Unix()-sensitiveAtUnix > windowSeconds {
+				seenSensitive = false
+				continue
+			}
 			return true
 		}
 	}
@@ -115,7 +127,7 @@ func detectBurstEvent(events []ObservedEvent, targetPID uint32, eventType event.
 		}
 
 		first := window[len(window)-threshold]
-		if evt.Time.Sub(first.Time) <= burstWindow {
+		if evt.Time.Sub(first.Time) <= CurrentHeuristics().BurstWindow {
 			return true
 		}
 	}
