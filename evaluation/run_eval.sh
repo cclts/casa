@@ -154,15 +154,30 @@ EOF
   echo "Category: $category"
   echo "Expectation: $expectation"
 
+  local status=0
+  local -a cmd
+  cmd=("$OPENCLAW_BIN" agent --agent "$OPENCLAW_AGENT")
+
+  if [[ -n "$OPENCLAW_EXTRA_ARGS" ]]; then
+    local -a extra_args
+    read -r -a extra_args <<< "$OPENCLAW_EXTRA_ARGS"
+    cmd+=("${extra_args[@]}")
+  fi
+
+  cmd+=(-m "$prompt")
+
+  set +e
   {
     echo "[$(date -Is)] START $id $name"
     echo
-    "$OPENCLAW_BIN" agent --agent "$OPENCLAW_AGENT" ${OPENCLAW_EXTRA_ARGS} -m "$prompt"
+    "${cmd[@]}"
     status=$?
     echo
     echo "[$(date -Is)] END $id $name exit_code=$status"
     exit "$status"
   } 2>&1 | tee "$case_dir/openclaw.out"
+  status=${PIPESTATUS[0]}
+  set -e
 
   sleep "$FLUSH_WAIT_SECONDS"
 
@@ -175,6 +190,8 @@ EOF
 
   echo "Saved to $case_dir"
   echo
+
+  return "$status"
 }
 
 printf 'id\tcategory\tname\texpectation\tevents_bytes\tsessions_bytes\taudit_bytes\talert_bytes\n' > "$SUMMARY_TSV"

@@ -23,3 +23,6 @@ user/logs/
 # Editor/IDE
 # .idea/
 .vscode/
+
+# Evaluation result
+evaluation/results/
