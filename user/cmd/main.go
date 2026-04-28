@@ -8,8 +8,10 @@ import (
 	"os/signal"
 	"sync"
 	"syscall"
+	"time"
 
 	"github.com/cclts/casa/user/internal/audit"
+	casacontext "github.com/cclts/casa/user/internal/context"
 	"github.com/cclts/casa/user/internal/decision"
 	"github.com/cclts/casa/user/internal/ebpf"
 	"github.com/cclts/casa/user/internal/event"
@@ -47,6 +49,7 @@ func main() {
 	}
 
 	decisionEngine := decision.NewEngine(ruleEngine)
+	configureHeuristics(decisionEngine.AnalysisConfig())
 
 	stopReload := setupReload(decisionEngine, cfg.RulePath)
 	defer stopReload()
@@ -137,6 +140,25 @@ func loadConfig() Config {
 	}
 }
 
+func configureHeuristics(analysis rules.AnalysisConfig) {
+	casacontext.ConfigureHeuristics(casacontext.Heuristics{
+		RecentEventLimit:       analysis.RecentEventLimit,
+		MaxPerProcessArtifacts: analysis.MaxPerProcessArtifacts,
+		DeepChainThreshold:     analysis.DeepChainThreshold,
+		BurstConnectThreshold:  analysis.BurstConnectThreshold,
+		BurstExecThreshold:     analysis.BurstExecThreshold,
+		BurstWindow:            time.Duration(analysis.BurstWindowSeconds) * time.Second,
+		SensitiveHistoryWindow: time.Duration(analysis.SensitiveHistoryWindowSecs) * time.Second,
+		SuspiciousPathPatterns: analysis.SuspiciousPathPatterns,
+		SensitivePathPrefixes:  analysis.SensitivePathPrefixes,
+		SensitivePathPatterns:  analysis.SensitivePathPatterns,
+		ShellNames:             analysis.ShellNames,
+		NetworkToolNames:       analysis.NetworkToolNames,
+		InterpreterNames:       analysis.InterpreterNames,
+		ContainerRuntimeNames:  analysis.ContainerRuntimeNames,
+	})
+}
+
 func getenv(key, fallback string) string {
 	if v := os.Getenv(key); v != "" {
 		return v
@@ -163,6 +185,8 @@ func setupReload(engine *decision.Engine, rulePath string) func() {
 				log.Printf("rule reload failed from %s: %v", rulePath, err)
 				continue
 			}
+
+			configureHeuristics(engine.AnalysisConfig())
 
 			log.Printf("rule config reloaded from %s", rulePath)
 		}

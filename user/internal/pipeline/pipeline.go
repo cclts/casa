@@ -2,7 +2,6 @@ package pipeline
 
 import (
 	"log"
-	"time"
 
 	"github.com/cclts/casa/user/internal/audit"
 	"github.com/cclts/casa/user/internal/context"
@@ -14,24 +13,6 @@ import (
 // Run is the main user-space analysis loop. It enriches events with process state,
 // derives context, evaluates risk, and writes audit records.
 func Run(events <-chan event.Event, decisionEngine *decision.Engine, auditMonitor *audit.Monitor) {
-	analysis := decisionEngine.AnalysisConfig()
-	context.ConfigureHeuristics(context.Heuristics{
-		RecentEventLimit:       analysis.RecentEventLimit,
-		MaxPerProcessArtifacts: analysis.MaxPerProcessArtifacts,
-		DeepChainThreshold:     analysis.DeepChainThreshold,
-		BurstConnectThreshold:  analysis.BurstConnectThreshold,
-		BurstExecThreshold:     analysis.BurstExecThreshold,
-		BurstWindow:            time.Duration(analysis.BurstWindowSeconds) * time.Second,
-		SensitiveHistoryWindow: time.Duration(analysis.SensitiveHistoryWindowSecs) * time.Second,
-		SuspiciousPathPatterns: analysis.SuspiciousPathPatterns,
-		SensitivePathPrefixes:  analysis.SensitivePathPrefixes,
-		SensitivePathPatterns:  analysis.SensitivePathPatterns,
-		ShellNames:             analysis.ShellNames,
-		NetworkToolNames:       analysis.NetworkToolNames,
-		InterpreterNames:       analysis.InterpreterNames,
-		ContainerRuntimeNames:  analysis.ContainerRuntimeNames,
-	})
-
 	tracker := process.NewTracker()
 	sessionTracker := process.NewSessionTracker(tracker)
 	securityStore := process.NewSecurityStore()
@@ -74,6 +55,26 @@ func Run(events <-chan event.Event, decisionEngine *decision.Engine, auditMonito
 
 		if e.Type != event.EventExit {
 			securityStore.Ensure(e.PID)
+		}
+		
+		switch e.Type {
+		case event.EventExecve:
+			fullArgs := ""
+			if len(e.Args) > 0 {
+				fullArgs = strings.Join(e.Args, " ")
+			}
+
+			log.Printf("  ➤ Exec: %s", e.Path)
+			if fullArgs != "" {
+				log.Printf("  ➤ Args: %s", fullArgs)
+			}
+
+		case event.EventOpenat:
+			log.Printf("  ➤ Open: %s flags=0x%x mode=0%o", e.Path, e.Flags, e.Mode)
+		case event.EventConnect:
+			log.Printf("  ➤ Connect: %s:%d", e.Addr, e.Port)
+		case event.EventExit:
+			log.Printf("  ➤ Exit: pid=%d tid=%d", e.PID, e.TID)
 		}
 
 		// The tracker caches parent/child depth so later stages do not have to re-walk /proc.
