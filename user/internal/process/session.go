@@ -1,6 +1,7 @@
 package process
 
 import (
+	"log"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -68,6 +69,14 @@ func (st *SessionTracker) ObserveExecve(e event.Event) {
 		st.sessions[e.PID] = sess
 		st.pidToSession[e.PID] = e.PID
 		st.rootToSession[e.PPID] = e.PID
+		log.Printf(
+			"[SESSION] start id=%d cli_pid=%d root_pid=%d path=%s args=%v",
+			sess.ID,
+			sess.SessionPID,
+			e.PPID,
+			e.Path,
+			e.Args,
+		)
 		return
 	}
 
@@ -161,6 +170,12 @@ func (st *SessionTracker) ObserveExit(e event.Event) {
 	if len(sess.Processes) == 0 && sess.IsClosing {
 		sess.IsClosed = true
 		sess.ClosedAt = e.Time
+		log.Printf(
+			"[SESSION] end id=%d cli_pid=%d closed_at=%s",
+			sess.ID,
+			sess.SessionPID,
+			sess.ClosedAt.Format(time.RFC3339Nano),
+		)
 	}
 }
 
@@ -207,6 +222,12 @@ func (st *SessionTracker) expireSessionsLocked(now time.Time) {
 				sess.ClosedAt = now
 			}
 		}
+		log.Printf(
+			"[SESSION] end id=%d cli_pid=%d closed_at=%s",
+			sess.ID,
+			sess.SessionPID,
+			sess.ClosedAt.Format(time.RFC3339Nano),
+		)
 		delete(st.sessions, sessionPID)
 	}
 }
