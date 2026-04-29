@@ -34,6 +34,8 @@ func Run(events <-chan event.Event, decisionEngine *decision.Engine, auditMonito
 		// Tracking: Update the process lineage tree
 		// On new process execution, propagate the tracking status from parent to child.
 		if e.Type == event.EventExecve {
+			log.Printf("[RAW EXECVE] pid=%d ppid=%d comm=%q path=%q argc=%d args=%q",
+				e.PID, e.PPID, e.Comm, e.Path, len(e.Args), e.Args)
 			tracker.Propagate(e.PID, e.PPID, e.Comm, isTransparentRoutineExec(e))
 			sessionTracker.ObserveExecve(e)
 		}

@@ -35,7 +35,7 @@ type SessionTracker struct {
 
 	sessions map[uint32]*Session
 
-	pidToSession map[uint32]uint32
+	pidToSession  map[uint32]uint32
 	rootToSession map[uint32]uint32
 
 	tracker *Tracker
@@ -58,7 +58,7 @@ func (st *SessionTracker) ObserveExecve(e event.Event) {
 
 	st.expireSessionsLocked(e.Time)
 
-	if isOpenClawCLIInvocation(st.tracker, e) {
+	if isOpenClawCLIInvocation(e) {
 		sess := &Session{
 			ID:         SessionID(e.PID),
 			SessionPID: e.PID,
@@ -263,22 +263,27 @@ func sessionExpired(sess *Session, now time.Time) bool {
 	return now.After(sess.GraceUntil)
 }
 
-func isOpenClawCLIInvocation(tracker *Tracker, e event.Event) bool {
+func isOpenClawCLIInvocation(e event.Event) bool {
 	if e.Type != event.EventExecve {
 		return false
 	}
-	if !tracker.IsRoot(e.PPID) {
-		return false
-	}
-	if !strings.HasPrefix(strings.ToLower(strings.TrimSpace(e.Comm)), "openclaw") {
-		return false
-	}
 
+	args := e.Args
 	base := strings.ToLower(filepath.Base(strings.TrimSpace(e.Path)))
-	switch base {
-	case "sh", "bash", "zsh":
-		return true
-	default:
-		return false
+
+	hasOpenClaw := base == "openclaw" || containsArg(args, "openclaw")
+	hasAgent := containsArg(args, "agent")
+	hasAgentFlag := containsArg(args, "--agent")
+	hasMessageFlag := containsArg(args, "-m") || containsArg(args, "--message")
+
+	return hasOpenClaw && hasAgent && hasAgentFlag && hasMessageFlag
+}
+
+func containsArg(args []string, target string) bool {
+	for _, a := range args {
+		if strings.TrimSpace(a) == target {
+			return true
+		}
 	}
+	return false
 }
