@@ -1,256 +1,263 @@
 package process
 
 import (
-	"fmt"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/cclts/casa/user/internal/event"
 )
 
-const (
-	rootAttributionWindow       = 1 * time.Second
-	rootAttributionRecentSkew   = 250 * time.Millisecond
-	rootAttributionHistoryLimit = 16
-)
+const sessionGracePeriod = 2 * time.Second
 
-// SessionID identifies the worker-level session boundary currently used by the pipeline.
+// SessionID identifies the current CLI-invocation-level session boundary.
 type SessionID uint32
 
-// Session groups a set of related processes under one resolved worker root.
+// Session groups a set of related processes under one resolved CLI invocation.
 type Session struct {
 	ID         SessionID
 	SessionPID uint32
 	Processes  map[uint32]struct{}
 
-	CreatedAt time.Time
-	LastSeen  time.Time
-	ClosedAt  time.Time
-	IsClosed  bool
+	CreatedAt  time.Time
+	LastSeen   time.Time
+	ClosedAt   time.Time
+	GraceUntil time.Time
+	IsClosing  bool
+	IsClosed   bool
 }
 
-// SessionTracker maps observed pids back to the worker process that owns the session.
+// SessionTracker maps observed pids back to the active OpenClaw CLI invocation.
 type SessionTracker struct {
 	mu sync.RWMutex
 
 	sessions map[uint32]*Session
 
 	pidToSession map[uint32]uint32
-	rootHints    map[uint32][]rootAttributionHint
+	rootToSession map[uint32]uint32
 
 	tracker *Tracker
-}
-
-type rootAttributionHint struct {
-	SessionPID uint32
-	SourcePID  uint32
-	SeenAt     time.Time
 }
 
 // NewSessionTracker creates the session resolver on top of the lineage tracker.
 func NewSessionTracker(tracker *Tracker) *SessionTracker {
 	return &SessionTracker{
-		sessions:     make(map[uint32]*Session),
-		pidToSession: make(map[uint32]uint32),
-		rootHints:    make(map[uint32][]rootAttributionHint),
-		tracker:      tracker,
+		sessions:      make(map[uint32]*Session),
+		pidToSession:  make(map[uint32]uint32),
+		rootToSession: make(map[uint32]uint32),
+		tracker:       tracker,
 	}
 }
 
-// ResolveSession walks lineage and decides whether the pid belongs to a tracked OpenClaw session.
-func (st *SessionTracker) ResolveSession(pid uint32, eventTime time.Time, maxDepth int) (*Session, Lineage, bool) {
-	lineage := BuildLineage(int(pid), st.tracker, maxDepth)
-
-	var sessionPID uint32
-	var rootPID uint32
-	found := false
-
-	// Today a session is anchored at the OpenClaw worker node beneath a tracked root.
-	// This keeps aggregation stable across child processes and execve boundaries.
-	for _, n := range lineage.Nodes {
-		if st.tracker.IsRoot(uint32(n.PID)) {
-			rootPID = uint32(n.PID)
-		}
-		if st.tracker.IsRoot(uint32(n.PPID)) &&
-			strings.HasPrefix(n.Comm, "openclaw") {
-			sessionPID = uint32(n.PID)
-			rootPID = uint32(n.PPID)
-			found = true
-			break
-		}
-	}
-
+// ObserveExecve updates session lifecycle on execve boundaries.
+func (st *SessionTracker) ObserveExecve(e event.Event) {
 	st.mu.Lock()
 	defer st.mu.Unlock()
 
-	if !found && rootPID != 0 {
-		sess, ok := st.resolveRootEventLocked(rootPID, eventTime)
-		if !ok {
-			return nil, lineage, false
+	st.expireSessionsLocked(e.Time)
+
+	if isOpenClawCLIInvocation(st.tracker, e) {
+		sess := &Session{
+			ID:         SessionID(e.PID),
+			SessionPID: e.PID,
+			Processes:  map[uint32]struct{}{e.PID: {}},
+			CreatedAt:  e.Time,
+			LastSeen:   e.Time,
 		}
-		sess.LastSeen = eventTime
-		return sess, lineage, true
+		st.sessions[e.PID] = sess
+		st.pidToSession[e.PID] = e.PID
+		st.rootToSession[e.PPID] = e.PID
+		return
 	}
 
-	if !found {
-		return nil, lineage, false
-	}
-
-	// get or create session
-	sess, ok := st.sessions[sessionPID]
-	if !ok {
-		sess = &Session{
-			ID:         SessionID(sessionPID),
-			SessionPID: sessionPID,
-			Processes:  make(map[uint32]struct{}),
-			CreatedAt:  eventTime,
+	if sessionPID, ok := st.pidToSession[e.PID]; ok {
+		if sess, ok := st.sessions[sessionPID]; ok && sessionAcceptsEvents(sess, e.Time) {
+			sess.LastSeen = e.Time
+			sess.Processes[e.PID] = struct{}{}
+			return
 		}
-		st.sessions[sessionPID] = sess
 	}
 
-	sess.LastSeen = eventTime
-	sess.Processes[pid] = struct{}{}
-	st.pidToSession[pid] = sessionPID
-
-	// add nodes to session
-	for _, n := range lineage.Nodes {
-		pid := uint32(n.PID)
-		sess.Processes[pid] = struct{}{}
-		st.pidToSession[pid] = sessionPID
+	if sessionPID, ok := st.pidToSession[e.PPID]; ok {
+		if sess, ok := st.sessions[sessionPID]; ok && sessionAcceptsEvents(sess, e.Time) {
+			sess.LastSeen = e.Time
+			sess.Processes[e.PID] = struct{}{}
+			st.pidToSession[e.PID] = sessionPID
+			return
+		}
 	}
 
-	if rootPID != 0 && pid != rootPID {
-		st.recordRootHintLocked(rootPID, sessionPID, pid, eventTime)
+	if st.tracker.IsRoot(e.PPID) {
+		if sessionPID, ok := st.rootToSession[e.PPID]; ok {
+			if sess, ok := st.sessions[sessionPID]; ok && sessionAcceptsEvents(sess, e.Time) {
+				sess.LastSeen = e.Time
+				sess.Processes[e.PID] = struct{}{}
+				st.pidToSession[e.PID] = sessionPID
+			}
+		}
 	}
-
-	return sess, lineage, true
 }
 
-func (st *SessionTracker) resolveRootEventLocked(rootPID uint32, now time.Time) (*Session, bool) {
-	hints := st.rootHints[rootPID]
-	if len(hints) == 0 {
-		return nil, false
-	}
+// Resolve returns the active or closing CLI session that owns the event.
+func (st *SessionTracker) Resolve(e event.Event) (*Session, bool) {
+	st.mu.Lock()
+	defer st.mu.Unlock()
 
-	filtered := hints[:0]
-	candidates := make(map[uint32]time.Time)
-	for _, hint := range hints {
-		if now.Sub(hint.SeenAt) > rootAttributionWindow {
-			continue
+	st.expireSessionsLocked(e.Time)
+
+	if sess, ok := st.lookupSessionLocked(e.PID, e.Time); ok {
+		sess.LastSeen = e.Time
+		return sess, true
+	}
+	if sess, ok := st.lookupSessionLocked(e.PPID, e.Time); ok {
+		sess.LastSeen = e.Time
+		return sess, true
+	}
+	if st.tracker.IsRoot(e.PID) {
+		if sess, ok := st.lookupRootSessionLocked(e.PID, e.Time); ok {
+			sess.LastSeen = e.Time
+			return sess, true
 		}
-		filtered = append(filtered, hint)
-		if seenAt, ok := candidates[hint.SessionPID]; !ok || hint.SeenAt.After(seenAt) {
-			candidates[hint.SessionPID] = hint.SeenAt
-		}
 	}
-	st.rootHints[rootPID] = filtered
-
-	if len(candidates) == 0 {
-		return nil, false
-	}
-
-	if len(candidates) == 1 {
-		for sessionPID := range candidates {
-			sess, ok := st.sessions[sessionPID]
-			if !ok || sess == nil || !sessionEligibleForRootAttribution(sess, now) {
-				return nil, false
-			}
+	if st.tracker.IsRoot(e.PPID) {
+		if sess, ok := st.lookupRootSessionLocked(e.PPID, e.Time); ok {
+			sess.LastSeen = e.Time
 			return sess, true
 		}
 	}
 
-	var bestSessionPID uint32
-	var bestSeenAt time.Time
-	var secondBest time.Time
-	for sessionPID, seenAt := range candidates {
-		if seenAt.After(bestSeenAt) {
-			secondBest = bestSeenAt
-			bestSeenAt = seenAt
-			bestSessionPID = sessionPID
-			continue
-		}
-		if seenAt.After(secondBest) {
-			secondBest = seenAt
-		}
+	return nil, false
+}
+
+// ObserveExit updates closing state and session membership on process exit.
+func (st *SessionTracker) ObserveExit(e event.Event) {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+
+	st.expireSessionsLocked(e.Time)
+
+	sessionPID, ok := st.pidToSession[e.PID]
+	if ok {
+		delete(st.pidToSession, e.PID)
 	}
 
-	if bestSessionPID == 0 {
-		return nil, false
-	}
-	if !secondBest.IsZero() && bestSeenAt.Sub(secondBest) < rootAttributionRecentSkew {
-		return nil, false
+	sess, ok := st.sessions[sessionPID]
+	if !ok {
+		if st.tracker.IsRoot(e.PID) {
+			if sessionPID, ok := st.rootToSession[e.PID]; ok {
+				if sess, ok := st.sessions[sessionPID]; ok {
+					markSessionClosing(sess, e.Time)
+				}
+			}
+		}
+		return
 	}
 
-	sess, ok := st.sessions[bestSessionPID]
-	if !ok || sess == nil || !sessionEligibleForRootAttribution(sess, now) {
+	delete(sess.Processes, e.PID)
+	if e.PID == sess.SessionPID {
+		markSessionClosing(sess, e.Time)
+	}
+	if len(sess.Processes) == 0 && sess.IsClosing {
+		sess.IsClosed = true
+		sess.ClosedAt = e.Time
+	}
+}
+
+func (st *SessionTracker) lookupSessionLocked(pid uint32, now time.Time) (*Session, bool) {
+	sessionPID, ok := st.pidToSession[pid]
+	if !ok {
+		return nil, false
+	}
+	sess, ok := st.sessions[sessionPID]
+	if !ok || !sessionAcceptsEvents(sess, now) {
 		return nil, false
 	}
 	return sess, true
 }
 
-func (st *SessionTracker) recordRootHintLocked(rootPID uint32, sessionPID uint32, sourcePID uint32, seenAt time.Time) {
-	hints := append(st.rootHints[rootPID], rootAttributionHint{
-		SessionPID: sessionPID,
-		SourcePID:  sourcePID,
-		SeenAt:     seenAt,
-	})
-	if len(hints) > rootAttributionHistoryLimit {
-		hints = hints[len(hints)-rootAttributionHistoryLimit:]
+func (st *SessionTracker) lookupRootSessionLocked(rootPID uint32, now time.Time) (*Session, bool) {
+	sessionPID, ok := st.rootToSession[rootPID]
+	if !ok {
+		return nil, false
 	}
-	st.rootHints[rootPID] = hints
+	sess, ok := st.sessions[sessionPID]
+	if !ok || !sessionAcceptsEvents(sess, now) {
+		return nil, false
+	}
+	return sess, true
 }
 
-func sessionEligibleForRootAttribution(sess *Session, now time.Time) bool {
-	if sess == nil {
+func (st *SessionTracker) expireSessionsLocked(now time.Time) {
+	for rootPID, sessionPID := range st.rootToSession {
+		sess, ok := st.sessions[sessionPID]
+		if !ok || sessionExpired(sess, now) {
+			delete(st.rootToSession, rootPID)
+		}
+	}
+
+	for sessionPID, sess := range st.sessions {
+		if !sessionExpired(sess, now) {
+			continue
+		}
+		sess.IsClosed = true
+		if sess.ClosedAt.IsZero() {
+			sess.ClosedAt = sess.GraceUntil
+			if sess.ClosedAt.IsZero() {
+				sess.ClosedAt = now
+			}
+		}
+		delete(st.sessions, sessionPID)
+	}
+}
+
+func markSessionClosing(sess *Session, closedAt time.Time) {
+	if sess == nil || sess.IsClosed {
+		return
+	}
+	sess.IsClosing = true
+	sess.GraceUntil = closedAt.Add(sessionGracePeriod)
+}
+
+func sessionAcceptsEvents(sess *Session, now time.Time) bool {
+	if sess == nil || sess.IsClosed {
 		return false
 	}
-	if !sess.IsClosed {
+	if !sess.IsClosing {
 		return true
 	}
-	if sess.ClosedAt.IsZero() {
+	return now.Before(sess.GraceUntil) || now.Equal(sess.GraceUntil)
+}
+
+func sessionExpired(sess *Session, now time.Time) bool {
+	if sess == nil {
+		return true
+	}
+	if sess.IsClosed {
+		return true
+	}
+	if !sess.IsClosing {
 		return false
 	}
-	return now.Sub(sess.ClosedAt) <= rootAttributionWindow
+	return now.After(sess.GraceUntil)
 }
 
-// DebugRootHints returns a human-readable snapshot of the current attribution
-// hints for one tracked root. This is intended for targeted troubleshooting.
-func (st *SessionTracker) DebugRootHints(rootPID uint32, now time.Time) string {
-	st.mu.RLock()
-	defer st.mu.RUnlock()
-
-	hints := st.rootHints[rootPID]
-	if len(hints) == 0 {
-		return "none"
+func isOpenClawCLIInvocation(tracker *Tracker, e event.Event) bool {
+	if e.Type != event.EventExecve {
+		return false
+	}
+	if !tracker.IsRoot(e.PPID) {
+		return false
+	}
+	if !strings.HasPrefix(strings.ToLower(strings.TrimSpace(e.Comm)), "openclaw") {
+		return false
 	}
 
-	parts := make([]string, 0, len(hints))
-	for _, hint := range hints {
-		age := now.Sub(hint.SeenAt)
-		parts = append(parts, fmt.Sprintf("session=%d source=%d age=%s", hint.SessionPID, hint.SourcePID, age.Round(time.Millisecond)))
-	}
-	return strings.Join(parts, "; ")
-}
-
-// HandleExit marks a tracked process as exited and closes the session when its anchor exits.
-func (st *SessionTracker) HandleExit(pid uint32, eventTime time.Time) {
-	st.mu.Lock()
-	defer st.mu.Unlock()
-
-	sessionPID, ok := st.pidToSession[pid]
-	if !ok {
-		return
-	}
-
-	delete(st.pidToSession, pid)
-
-	sess, ok := st.sessions[sessionPID]
-	if !ok {
-		return
-	}
-
-	delete(sess.Processes, pid)
-	if pid == sessionPID || len(sess.Processes) == 0 {
-		sess.IsClosed = true
-		sess.ClosedAt = eventTime
+	base := strings.ToLower(filepath.Base(strings.TrimSpace(e.Path)))
+	switch base {
+	case "sh", "bash", "zsh":
+		return true
+	default:
+		return false
 	}
 }

@@ -1,7 +1,6 @@
 package pipeline
 
 import (
-	"fmt"
 	"log"
 	"strings"
 
@@ -36,43 +35,23 @@ func Run(events <-chan event.Event, decisionEngine *decision.Engine, auditMonito
 		// On new process execution, propagate the tracking status from parent to child.
 		if e.Type == event.EventExecve {
 			tracker.Propagate(e.PID, e.PPID, e.Comm, isTransparentRoutineExec(e))
+			sessionTracker.ObserveExecve(e)
 		}
 
 		// Skip events if neither the process nor its parent is in our watchlist.
 		if !tracker.Exists(e.PID) && !tracker.Exists(e.PPID) {
-			if e.Type == event.EventConnect || e.Type == event.EventOpenat {
-				log.Printf("Debug: dropped before resolve type=%s pid=%d ppid=%d comm=%s tracker_pid=%t tracker_ppid=%t root_pid=%t root_ppid=%t addr=%s port=%d path=%s",
-					e.Type.String(), e.PID, e.PPID, e.Comm,
-					tracker.Exists(e.PID), tracker.Exists(e.PPID),
-					tracker.IsRoot(e.PID), tracker.IsRoot(e.PPID),
-					e.Addr, e.Port, e.Path,
-				)
-			}
 			auditMonitor.DiscardEvent(e)
 			continue
 		}
 
 		// Resolve the event into the coarse "worker session" boundary the system uses today.
-		sess, lineage, ok := sessionTracker.ResolveSession(
-			e.PID,
-			e.Time,
-			decisionEngine.LineageMaxDepth(),
-		)
+		sess, ok := sessionTracker.Resolve(e)
 		if !ok {
-			if e.Type == event.EventConnect || e.Type == event.EventOpenat {
-				lineageParts := make([]string, 0, len(lineage.Nodes))
-				for _, n := range lineage.Nodes {
-					lineageParts = append(lineageParts, fmt.Sprintf("%d/%s(ppid=%d)", n.PID, n.Comm, n.PPID))
-				}
-				log.Printf("Debug: resolve failed type=%s pid=%d ppid=%d comm=%s root_pid=%t root_ppid=%t hints=%s lineage=%s addr=%s port=%d path=%s",
-					e.Type.String(), e.PID, e.PPID, e.Comm,
-					tracker.IsRoot(e.PID), tracker.IsRoot(e.PPID),
-					sessionTracker.DebugRootHints(e.PID, e.Time),
-					strings.Join(lineageParts, " -> "),
-					e.Addr, e.Port, e.Path,
-				)
-			}
 			auditMonitor.DiscardEvent(e)
+			if e.Type == event.EventExit {
+				sessionTracker.ObserveExit(e)
+				tracker.Remove(e.PID)
+			}
 			continue
 		}
 
@@ -106,6 +85,7 @@ func Run(events <-chan event.Event, decisionEngine *decision.Engine, auditMonito
 			auditMonitor.DiscardEvent(e)
 			continue
 		}
+		lineage := process.BuildLineage(int(e.PID), tracker, decisionEngine.LineageMaxDepth())
 		ctx := contextManager.ObserveAndBuild(sess.SessionPID, lineage, securityStore, e, info.Depth)
 		rawSession, ok := contextManager.SnapshotSession(sess.SessionPID)
 		if !ok {
@@ -120,7 +100,7 @@ func Run(events <-chan event.Event, decisionEngine *decision.Engine, auditMonito
 		}
 
 		if e.Type == event.EventExit {
-			sessionTracker.HandleExit(e.PID, e.Time)
+			sessionTracker.ObserveExit(e)
 			tracker.Remove(e.PID)
 		}
 	}
