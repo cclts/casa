@@ -13,7 +13,7 @@ type Event struct {
 	TsNS     uint64
 	Comm     [16]byte
 	Filename [128]byte
-	Args     [5][64]byte
+	Args     [8][64]byte
 	Daddr    uint32
 	Dport    uint16
 }

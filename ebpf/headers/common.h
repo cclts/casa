@@ -3,7 +3,7 @@
 
 #define TASK_COMM_LEN 16
 #define MAX_FILENAME_LEN 128
-#define MAX_ARGS 5
+#define MAX_ARGS 8
 #define ARG_LEN  64
 
 #define EVENT_EXECVE 0

@@ -22,7 +22,7 @@ func ToEvent(e Event) event.Event {
 	// maximum argument slots that the eBPF side exports.
 	args := make([]string, 0, e.Argc)
 	for i := 0; i < int(e.Argc); i++ {
-		if i >= 5 {
+		if i >= len(e.Args) {
 			break
 		}
 		argStr := string(bytes.TrimRight(e.Args[i][:], "\x00"))
