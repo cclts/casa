@@ -85,6 +85,10 @@ func (st *SessionTracker) ObserveExecve(e event.Event) {
 	st.expireSessionsLocked(e.Time)
 
 	if isOpenClawCLIInvocation(e) {
+		if _, ok := st.activeSessionLocked(e.Time); ok {
+			return
+		}
+
 		id := st.nextSessionID
 		st.nextSessionID++
 
@@ -219,15 +223,24 @@ func isOpenClawCLIInvocation(e event.Event) bool {
 		return false
 	}
 
-	args := e.Args
-	base := strings.ToLower(filepath.Base(strings.TrimSpace(e.Path)))
+	nodePath := strings.TrimSpace(e.Path)
+	if strings.ToLower(filepath.Base(nodePath)) != "node" {
+		return false
+	}
 
-	hasOpenClaw := base == "openclaw" || containsArgBase(args, "openclaw")
-	hasAgent := containsArg(args, "agent")
-	hasAgentFlag := containsArg(args, "--agent")
-	hasMessageFlag := containsArg(args, "-m") || containsArg(args, "--message")
+	openClawPath, ok := resolveOpenClawScriptArg(e.Args)
+	if !ok {
+		return false
+	}
 
-	return hasOpenClaw && hasAgent && hasAgentFlag && hasMessageFlag
+	hasAgent := containsArg(e.Args, "agent")
+	hasAgentFlag := containsArg(e.Args, "--agent")
+	hasMessageFlag := containsArg(e.Args, "-m") || containsArg(e.Args, "--message")
+	if !(hasAgent && hasAgentFlag && hasMessageFlag) {
+		return false
+	}
+
+	return sameNormalizedDir(nodePath, openClawPath)
 }
 
 func containsArg(args []string, target string) bool {
@@ -239,12 +252,31 @@ func containsArg(args []string, target string) bool {
 	return false
 }
 
-func containsArgBase(args []string, target string) bool {
-	for _, a := range args {
-		a = strings.TrimSpace(a)
-		if strings.ToLower(filepath.Base(a)) == target {
-			return true
+func resolveOpenClawScriptArg(args []string) (string, bool) {
+	for i, arg := range args {
+		if i == 0 {
+			continue
+		}
+
+		arg = strings.TrimSpace(arg)
+		if arg == "" || strings.HasPrefix(arg, "-") {
+			continue
+		}
+
+		if strings.ToLower(filepath.Base(arg)) == "openclaw" {
+			return arg, true
 		}
 	}
-	return false
+
+	return "", false
+}
+
+func sameNormalizedDir(left, right string) bool {
+	left = strings.TrimSpace(left)
+	right = strings.TrimSpace(right)
+	if left == "" || right == "" {
+		return false
+	}
+
+	return filepath.Clean(filepath.Dir(left)) == filepath.Clean(filepath.Dir(right))
 }
