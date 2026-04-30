@@ -37,13 +37,9 @@ func Run(ctx context.Context, events <-chan event.Event, decisionEngine *decisio
 		// Tracking: Update the process lineage tree
 		// On new process execution, propagate the tracking status from parent to child.
 		if e.Type == event.EventExecve {
-			log.Printf("[RAW EXECVE] pid=%d ppid=%d comm=%q path=%q argc=%d args=%q",
-				e.PID, e.PPID, e.Comm, e.Path, len(e.Args), e.Args)
 			tracker.Propagate(e.PID, e.PPID, isTransparentRoutineExec(e))
 			sessionTracker.ObserveExecve(e)
-		} else if e.Type == event.EventExit {
-			log.Printf("[RAW EXIT] pid=%d ppid=%d comm=%q", e.PID, e.PPID, e.Comm)
-		}
+		} 
 
 		// Skip events if neither the process nor its parent is in our watchlist.
 		if !tracker.Exists(e.PID) && !tracker.Exists(e.PPID) {
