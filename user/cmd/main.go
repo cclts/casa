@@ -20,12 +20,14 @@ import (
 )
 
 type Config struct {
-	RulePath  string
-	LogPath   string
-	AlertPath string
-	BPFPath   string
-	PIDPath   string
-	BufSize   int
+	EventLogPath   string
+	SessionLogPath string
+	RulePath       string
+	LogPath        string
+	AlertPath      string
+	BPFPath        string
+	PIDPath        string
+	BufSize        int
 }
 
 func main() {
@@ -54,7 +56,7 @@ func main() {
 	stopReload := setupReload(decisionEngine, cfg.RulePath)
 	defer stopReload()
 
-	auditMonitor, err := audit.NewMonitor(cfg.LogPath, cfg.AlertPath)
+	auditMonitor, err := audit.NewMonitor(cfg.EventLogPath, cfg.SessionLogPath, cfg.LogPath, cfg.AlertPath)
 	if err != nil {
 		log.Fatalf("initialize audit monitor: %v", err)
 	}
@@ -131,12 +133,14 @@ func main() {
 
 func loadConfig() Config {
 	return Config{
-		RulePath:  getenv("CASA_RULES_PATH", "user/config/rules.json"),
-		LogPath:   getenv("CASA_AUDIT_LOG_PATH", "user/logs/audit.log"),
-		AlertPath: getenv("CASA_ALERT_LOG_PATH", "user/logs/alert.log"),
-		BPFPath:   getenv("CASA_BPF_PATH", "ebpf/build/probes.o"),
-		PIDPath:   getenv("CASA_PID_PATH", "/var/run/casa.pid"),
-		BufSize:   500,
+		EventLogPath:   getenvFirst([]string{"CASA_EVENTS_LOG_PATH", "CASA_EVENTS_LOG"}, "user/logs/events.log"),
+		SessionLogPath: getenvFirst([]string{"CASA_SESSIONS_LOG_PATH", "CASA_SESSIONS_LOG"}, "user/logs/sessions.log"),
+		RulePath:       getenv("CASA_RULES_PATH", "user/config/rules.json"),
+		LogPath:        getenv("CASA_AUDIT_LOG_PATH", "user/logs/audit.log"),
+		AlertPath:      getenv("CASA_ALERT_LOG_PATH", "user/logs/alert.log"),
+		BPFPath:        getenv("CASA_BPF_PATH", "ebpf/build/probes.o"),
+		PIDPath:        getenv("CASA_PID_PATH", "/var/run/casa.pid"),
+		BufSize:        500,
 	}
 }
 
@@ -162,6 +166,15 @@ func configureHeuristics(analysis rules.AnalysisConfig) {
 func getenv(key, fallback string) string {
 	if v := os.Getenv(key); v != "" {
 		return v
+	}
+	return fallback
+}
+
+func getenvFirst(keys []string, fallback string) string {
+	for _, key := range keys {
+		if v := os.Getenv(key); v != "" {
+			return v
+		}
 	}
 	return fallback
 }

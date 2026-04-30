@@ -38,7 +38,13 @@ type eventKey struct {
 }
 
 // NewMonitor opens append-only events.log, sessions.log, audit.log, and alert.log files.
-func NewMonitor(logPath, alertPath string) (*Monitor, error) {
+func NewMonitor(eventPath, sessionPath, logPath, alertPath string) (*Monitor, error) {
+	if eventPath == "" {
+		eventPath = defaultEventLogPath
+	}
+	if sessionPath == "" {
+		sessionPath = defaultSessionLogPath
+	}
 	if logPath == "" {
 		logPath = defaultAuditLogPath
 	}
@@ -46,12 +52,12 @@ func NewMonitor(logPath, alertPath string) (*Monitor, error) {
 		alertPath = defaultAlertLogPath
 	}
 
-	eventFile, err := openLogFile(defaultEventLogPath)
+	eventFile, err := openLogFile(eventPath)
 	if err != nil {
 		return nil, err
 	}
 
-	sessionFile, err := openLogFile(defaultSessionLogPath)
+	sessionFile, err := openLogFile(sessionPath)
 	if err != nil {
 		_ = eventFile.Close()
 		return nil, err

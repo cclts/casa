@@ -9,16 +9,35 @@ func buildFileContext(state *SessionState) FileContext {
 }
 
 func detectWriteThenExecSamePath(state *SessionState) bool {
+	if state == nil {
+		return false
+	}
+
+	writtenPaths := make(map[string]struct{})
+	execPaths := make(map[string]struct{})
+
 	for _, procState := range state.Processes {
-		if procState.ExecPath == "" {
+		if procState == nil {
 			continue
 		}
+
 		for _, open := range procState.Opens {
-			if open.Path == procState.ExecPath && openHasWriteIntent(open.Flags) {
-				return true
+			if openHasWriteIntent(open.Flags) {
+				writtenPaths[normalizePath(open.Path)] = struct{}{}
 			}
 		}
+
+		if procState.ExecPath != "" {
+			execPaths[normalizePath(procState.ExecPath)] = struct{}{}
+		}
 	}
+
+	for path := range execPaths {
+		if _, ok := writtenPaths[path]; ok {
+			return true
+		}
+	}
+
 	return false
 }
 

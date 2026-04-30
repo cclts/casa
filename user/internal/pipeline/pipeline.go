@@ -16,17 +16,17 @@ import (
 // Run is the main user-space analysis loop.
 //
 // Order matters here:
-// 1. stage the raw event for events.log
-// 2. update only the minimal tracker/session lifecycle state
-// 3. first gate: drop anything outside the tracked OpenClaw tree
-// 4. only after that, do heavier enrichment such as security reads and
-//    exec lineage reconstruction
-// 5. keep only events that occur while a CLI session window is active
-// 6. fold accepted events into raw session state, derive session context, and
-//    emit audit/session records
+//  1. stage the raw event for events.log
+//  2. update only the minimal tracker/session lifecycle state
+//  3. first gate: drop anything outside the tracked OpenClaw tree
+//  4. only after that, do heavier enrichment such as security reads and
+//     exec lineage reconstruction
+//  5. keep only events that occur while a CLI session window is active
+//  6. fold accepted events into raw session state, derive session context, and
+//     emit audit/session records
 func Run(ctx context.Context, events <-chan event.Event, decisionEngine *decision.Engine, auditMonitor *audit.Monitor) {
 	tracker := process.NewTracker()
-	sessionTracker := process.NewSessionTracker(tracker)
+	sessionTracker := process.NewSessionTracker()
 	securityStore := process.NewSecurityStore()
 	contextManager := casacontext.NewManager()
 	sessionTracker.StartJanitor(ctx, 500*time.Millisecond, func(id process.SessionID, closedAt time.Time) {
@@ -45,6 +45,13 @@ func Run(ctx context.Context, events <-chan event.Event, decisionEngine *decisio
 			log.Printf("Audit: event_write_failed err=%v", err)
 		}
 
+		switch e.Type {
+		case event.EventExecve:
+			log.Printf("[RAW EXECVE] pid=%d ppid=%d path=%s args=%v", e.PID, e.PPID, e.Path, e.Args)
+		case event.EventExit:
+			log.Printf("[RAW EXIT] pid=%d ppid=%d tid=%d", e.PID, e.PPID, e.TID)
+		}
+
 		// Execve is the only event that can extend the tracked tree and start a
 		// new CLI session. EXIT only updates closing state for the current session.
 		if e.Type == event.EventExecve {
@@ -56,6 +63,13 @@ func Run(ctx context.Context, events <-chan event.Event, decisionEngine *decisio
 
 		// First gate: keep only events from the tracked OpenClaw process tree.
 		if !tracker.Exists(e.PID) && !tracker.Exists(e.PPID) {
+			log.Printf(
+				"[DROP tracker_gate] type=%s pid=%d ppid=%d path=%s",
+				e.Type.String(),
+				e.PID,
+				e.PPID,
+				e.Path,
+			)
 			auditMonitor.DiscardEvent(e)
 			if e.Type == event.EventExit {
 				tracker.Remove(e.PID)
@@ -76,6 +90,13 @@ func Run(ctx context.Context, events <-chan event.Event, decisionEngine *decisio
 		// that session window is still active at this event timestamp.
 		sess, ok := sessionTracker.ActiveSession(e.Time)
 		if !ok {
+			log.Printf(
+				"[DROP session_gate] type=%s pid=%d ppid=%d path=%s",
+				e.Type.String(),
+				e.PID,
+				e.PPID,
+				e.Path,
+			)
 			auditMonitor.DiscardEvent(e)
 			if e.Type == event.EventExit {
 				tracker.Remove(e.PID)

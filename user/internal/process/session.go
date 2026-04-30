@@ -34,16 +34,13 @@ type SessionTracker struct {
 
 	activeSessionID SessionID
 	nextSessionID   SessionID
-
-	tracker *Tracker
 }
 
-// NewSessionTracker creates the session resolver on top of the lineage tracker.
-func NewSessionTracker(tracker *Tracker) *SessionTracker {
+// NewSessionTracker creates the session resolver for CLI invocation windows.
+func NewSessionTracker() *SessionTracker {
 	return &SessionTracker{
 		sessions:      make(map[SessionID]*Session),
 		nextSessionID: 1,
-		tracker:       tracker,
 	}
 }
 
@@ -166,11 +163,11 @@ func (st *SessionTracker) expireSessionsLocked(now time.Time) []ExpiredSession {
 		if closeAt.IsZero() {
 			closeAt = now
 		}
-			closeSessionLocked(sess, closeAt)
-			expired = append(expired, ExpiredSession{
-				ID:       sess.ID,
-				ClosedAt: closeAt,
-			})
+		closeSessionLocked(sess, closeAt)
+		expired = append(expired, ExpiredSession{
+			ID:       sess.ID,
+			ClosedAt: closeAt,
+		})
 		delete(st.sessions, id)
 		if st.activeSessionID == id {
 			st.activeSessionID = 0
