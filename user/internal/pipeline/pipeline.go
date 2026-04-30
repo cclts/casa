@@ -1,11 +1,13 @@
 package pipeline
 
 import (
+	"context"
 	"log"
 	"strings"
+	"time"
 
 	"github.com/cclts/casa/user/internal/audit"
-	"github.com/cclts/casa/user/internal/context"
+	casacontext "github.com/cclts/casa/user/internal/context"
 	"github.com/cclts/casa/user/internal/decision"
 	"github.com/cclts/casa/user/internal/event"
 	"github.com/cclts/casa/user/internal/process"
@@ -13,11 +15,12 @@ import (
 
 // Run is the main user-space analysis loop. It enriches events with process state,
 // derives context, evaluates risk, and writes audit records.
-func Run(events <-chan event.Event, decisionEngine *decision.Engine, auditMonitor *audit.Monitor) {
+func Run(ctx context.Context, events <-chan event.Event, decisionEngine *decision.Engine, auditMonitor *audit.Monitor) {
 	tracker := process.NewTracker()
 	sessionTracker := process.NewSessionTracker(tracker)
+	sessionTracker.StartJanitor(ctx, 500*time.Millisecond)
 	securityStore := process.NewSecurityStore()
-	contextManager := context.NewManager()
+	contextManager := casacontext.NewManager()
 
 	if err := process.BootstrapOpenClaw(tracker, securityStore); err != nil {
 		log.Println("bootstrap error:", err)
@@ -36,7 +39,7 @@ func Run(events <-chan event.Event, decisionEngine *decision.Engine, auditMonito
 		if e.Type == event.EventExecve {
 			log.Printf("[RAW EXECVE] pid=%d ppid=%d comm=%q path=%q argc=%d args=%q",
 				e.PID, e.PPID, e.Comm, e.Path, len(e.Args), e.Args)
-			tracker.Propagate(e.PID, e.PPID, e.Comm, isTransparentRoutineExec(e))
+			tracker.Propagate(e.PID, e.PPID, isTransparentRoutineExec(e))
 			sessionTracker.ObserveExecve(e)
 		}
 
@@ -88,16 +91,16 @@ func Run(events <-chan event.Event, decisionEngine *decision.Engine, auditMonito
 			continue
 		}
 		lineage := process.BuildLineage(int(e.PID), tracker, decisionEngine.LineageMaxDepth())
-		ctx := contextManager.ObserveAndBuild(sess.SessionPID, lineage, securityStore, e, info.Depth)
-		rawSession, ok := contextManager.SnapshotSession(sess.SessionPID)
+		contextSnapshot := contextManager.ObserveAndBuild(uint32(sess.ID), sess.SessionPID, lineage, securityStore, e, info.Depth)
+		rawSession, ok := contextManager.SnapshotSession(uint32(sess.ID))
 		if !ok {
 			auditMonitor.DiscardEvent(e)
 			continue
 		}
-		result := decisionEngine.Evaluate(ctx)
+		result := decisionEngine.Evaluate(contextSnapshot)
 
 		// Audit output is best-effort: analysis should continue even if disk logging fails.
-		if err := auditMonitor.Record(e, ctx, rawSession, result); err != nil {
+		if err := auditMonitor.Record(e, contextSnapshot, rawSession, result); err != nil {
 			log.Printf("Audit: write_failed err=%v", err)
 		}
 

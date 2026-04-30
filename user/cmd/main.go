@@ -109,7 +109,7 @@ func main() {
 	pipelineDone := make(chan struct{})
 	go func() {
 		defer close(pipelineDone)
-		pipeline.Run(events, decisionEngine, auditMonitor)
+		pipeline.Run(ctx, events, decisionEngine, auditMonitor)
 	}()
 
 	log.Println("CASA pipeline is running")

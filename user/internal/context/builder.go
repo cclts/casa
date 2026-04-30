@@ -12,7 +12,7 @@ func BuildContext(state *SessionState, targetPID uint32) Context {
 		return ctx
 	}
 
-	ctx.Execution = buildExecutionChainContext(procState)
+	ctx.Execution = buildExecutionChainContext(state, procState)
 	ctx.Capability = buildCapabilityContext(procState)
 	ctx.History = buildHistoricalContext(state, targetPID)
 	ctx.File = buildFileContext(procState)

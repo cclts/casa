@@ -98,14 +98,28 @@ func trimRecentEvents(items []ObservedEvent, limit int) []ObservedEvent {
 	return items[len(items)-limit:]
 }
 
-func lineageHasCommand(lineage []LineageNode, names map[string]struct{}) bool {
+func lineageHasCommand(state *SessionState, lineage []LineageNode, names map[string]struct{}) bool {
 	for _, node := range lineage {
-		name := normalizePath(basenameFromPath(node.Comm))
+		name := lineageNodeCommandName(state, node.PID)
 		if _, ok := names[name]; ok {
 			return true
 		}
 	}
 	return false
+}
+
+func lineageNodeCommandName(state *SessionState, pid uint32) string {
+	if state == nil {
+		return ""
+	}
+	procState := state.Processes[pid]
+	if procState == nil {
+		return ""
+	}
+	if procState.ExecPath != "" {
+		return normalizePath(basenameFromPath(procState.ExecPath))
+	}
+	return normalizePath(basenameFromPath(procState.Comm))
 }
 
 func nameSet(items []string) map[string]struct{} {

@@ -245,7 +245,7 @@ func (m *Monitor) Record(e event.Event, ctx context.Context, raw context.Session
 		}
 	}
 
-	if e.Type == event.EventExit && e.PID == ctx.SessionID {
+	if e.Type == event.EventExit && e.PID == raw.SessionPID {
 		if err := m.writeSessionRecordLocked(raw, session, "session_root_exit", e.Time); err != nil {
 			m.writerErr = err
 			return err

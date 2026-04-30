@@ -1,6 +1,7 @@
 package process
 
 import (
+	"context"
 	"log"
 	"path/filepath"
 	"strings"
@@ -19,7 +20,6 @@ type SessionID uint32
 type Session struct {
 	ID         SessionID
 	SessionPID uint32
-	Processes  map[uint32]struct{}
 
 	CreatedAt  time.Time
 	LastSeen   time.Time
@@ -33,10 +33,10 @@ type Session struct {
 type SessionTracker struct {
 	mu sync.RWMutex
 
-	sessions map[uint32]*Session
+	sessions map[SessionID]*Session
 
-	pidToSession  map[uint32]uint32
-	rootToSession map[uint32]uint32
+	activeSessionID SessionID
+	nextSessionID   SessionID
 
 	tracker *Tracker
 }
@@ -44,11 +44,33 @@ type SessionTracker struct {
 // NewSessionTracker creates the session resolver on top of the lineage tracker.
 func NewSessionTracker(tracker *Tracker) *SessionTracker {
 	return &SessionTracker{
-		sessions:      make(map[uint32]*Session),
-		pidToSession:  make(map[uint32]uint32),
-		rootToSession: make(map[uint32]uint32),
+		sessions:      make(map[SessionID]*Session),
+		nextSessionID: 1,
 		tracker:       tracker,
 	}
+}
+
+// StartJanitor periodically expires closing sessions after their grace period elapses.
+func (st *SessionTracker) StartJanitor(ctx context.Context, interval time.Duration) {
+	ticker := time.NewTicker(interval)
+	go func() {
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case now := <-ticker.C:
+				st.Expire(now)
+			}
+		}
+	}()
+}
+
+// Expire closes sessions whose grace period elapsed.
+func (st *SessionTracker) Expire(now time.Time) {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	st.expireSessionsLocked(now)
 }
 
 // ObserveExecve updates session lifecycle on execve boundaries.
@@ -59,16 +81,17 @@ func (st *SessionTracker) ObserveExecve(e event.Event) {
 	st.expireSessionsLocked(e.Time)
 
 	if isOpenClawCLIInvocation(e) {
+		id := st.nextSessionID
+		st.nextSessionID++
+
 		sess := &Session{
-			ID:         SessionID(e.PID),
+			ID:         id,
 			SessionPID: e.PID,
-			Processes:  map[uint32]struct{}{e.PID: {}},
 			CreatedAt:  e.Time,
 			LastSeen:   e.Time,
 		}
-		st.sessions[e.PID] = sess
-		st.pidToSession[e.PID] = e.PID
-		st.rootToSession[e.PPID] = e.PID
+		st.sessions[id] = sess
+		st.activeSessionID = id
 		log.Printf(
 			"[SESSION] start id=%d cli_pid=%d root_pid=%d path=%s args=%v",
 			sess.ID,
@@ -79,159 +102,99 @@ func (st *SessionTracker) ObserveExecve(e event.Event) {
 		)
 		return
 	}
-
-	if sessionPID, ok := st.pidToSession[e.PID]; ok {
-		if sess, ok := st.sessions[sessionPID]; ok && sessionAcceptsEvents(sess, e.Time) {
-			sess.LastSeen = e.Time
-			sess.Processes[e.PID] = struct{}{}
-			return
-		}
-	}
-
-	if sessionPID, ok := st.pidToSession[e.PPID]; ok {
-		if sess, ok := st.sessions[sessionPID]; ok && sessionAcceptsEvents(sess, e.Time) {
-			sess.LastSeen = e.Time
-			sess.Processes[e.PID] = struct{}{}
-			st.pidToSession[e.PID] = sessionPID
-			return
-		}
-	}
-
-	if st.tracker.IsRoot(e.PPID) {
-		if sessionPID, ok := st.rootToSession[e.PPID]; ok {
-			if sess, ok := st.sessions[sessionPID]; ok && sessionAcceptsEvents(sess, e.Time) {
-				sess.LastSeen = e.Time
-				sess.Processes[e.PID] = struct{}{}
-				st.pidToSession[e.PID] = sessionPID
-			}
-		}
-	}
 }
 
-// Resolve returns the active or closing CLI session that owns the event.
+// Resolve attaches an arbitrary event back to the current CLI session window.
+// In the evaluation-first model, a session is only a time window. If there is
+// an active/closing CLI session and the event still belongs to the tracked
+// OpenClaw process tree, the event is attributed to that session.
 func (st *SessionTracker) Resolve(e event.Event) (*Session, bool) {
 	st.mu.Lock()
 	defer st.mu.Unlock()
 
 	st.expireSessionsLocked(e.Time)
 
-	if sess, ok := st.lookupSessionLocked(e.PID, e.Time); ok {
-		sess.LastSeen = e.Time
-		return sess, true
+	sess, ok := st.activeSessionLocked(e.Time)
+	if !ok {
+		return nil, false
 	}
-	if sess, ok := st.lookupSessionLocked(e.PPID, e.Time); ok {
-		sess.LastSeen = e.Time
-		return sess, true
-	}
-	if st.tracker.IsRoot(e.PID) {
-		if sess, ok := st.lookupRootSessionLocked(e.PID, e.Time); ok {
-			sess.LastSeen = e.Time
-			return sess, true
-		}
-	}
-	if st.tracker.IsRoot(e.PPID) {
-		if sess, ok := st.lookupRootSessionLocked(e.PPID, e.Time); ok {
-			sess.LastSeen = e.Time
-			return sess, true
-		}
+	if !st.tracker.Exists(e.PID) && !st.tracker.Exists(e.PPID) {
+		return nil, false
 	}
 
-	return nil, false
+	sess.LastSeen = e.Time
+	return sess, true
 }
 
-// ObserveExit updates closing state and session membership on process exit.
+// ObserveExit updates closing state on process exit. Only the CLI invocation
+// pid itself defines the session boundary; other process exits do not affect
+// the session window directly.
 func (st *SessionTracker) ObserveExit(e event.Event) {
 	st.mu.Lock()
 	defer st.mu.Unlock()
 
 	st.expireSessionsLocked(e.Time)
 
-	sessionPID, ok := st.pidToSession[e.PID]
-	if ok {
-		delete(st.pidToSession, e.PID)
-	}
-
-	sess, ok := st.sessions[sessionPID]
+	sess, ok := st.activeSessionLocked(e.Time)
 	if !ok {
-		if st.tracker.IsRoot(e.PID) {
-			if sessionPID, ok := st.rootToSession[e.PID]; ok {
-				if sess, ok := st.sessions[sessionPID]; ok {
-					markSessionClosing(sess, e.Time)
-				}
-			}
-		}
 		return
 	}
-
-	delete(sess.Processes, e.PID)
 	if e.PID == sess.SessionPID {
 		markSessionClosing(sess, e.Time)
 	}
-	if len(sess.Processes) == 0 && sess.IsClosing {
-		sess.IsClosed = true
-		sess.ClosedAt = e.Time
-		log.Printf(
-			"[SESSION] end id=%d cli_pid=%d closed_at=%s",
-			sess.ID,
-			sess.SessionPID,
-			sess.ClosedAt.Format(time.RFC3339Nano),
-		)
-	}
 }
 
-func (st *SessionTracker) lookupSessionLocked(pid uint32, now time.Time) (*Session, bool) {
-	sessionPID, ok := st.pidToSession[pid]
-	if !ok {
+// activeSessionLocked returns the single active/closing session used by the
+// evaluation-first model after verifying it still accepts events at `now`.
+func (st *SessionTracker) activeSessionLocked(now time.Time) (*Session, bool) {
+	if st.activeSessionID == 0 {
 		return nil, false
 	}
-	sess, ok := st.sessions[sessionPID]
+	sess, ok := st.sessions[st.activeSessionID]
 	if !ok || !sessionAcceptsEvents(sess, now) {
 		return nil, false
 	}
 	return sess, true
 }
 
-func (st *SessionTracker) lookupRootSessionLocked(rootPID uint32, now time.Time) (*Session, bool) {
-	sessionPID, ok := st.rootToSession[rootPID]
-	if !ok {
-		return nil, false
-	}
-	sess, ok := st.sessions[sessionPID]
-	if !ok || !sessionAcceptsEvents(sess, now) {
-		return nil, false
-	}
-	return sess, true
-}
-
+// expireSessionsLocked performs the actual janitor sweep. Sessions only leave
+// memory after their grace period elapses; at that point they are finalized,
+// logged once, and detached from the active-session pointer.
 func (st *SessionTracker) expireSessionsLocked(now time.Time) {
-	for rootPID, sessionPID := range st.rootToSession {
-		sess, ok := st.sessions[sessionPID]
-		if !ok || sessionExpired(sess, now) {
-			delete(st.rootToSession, rootPID)
-		}
-	}
-
-	for sessionPID, sess := range st.sessions {
+	for id, sess := range st.sessions {
 		if !sessionExpired(sess, now) {
 			continue
 		}
-		sess.IsClosed = true
-		if sess.ClosedAt.IsZero() {
-			sess.ClosedAt = sess.GraceUntil
-			if sess.ClosedAt.IsZero() {
-				sess.ClosedAt = now
-			}
+		closeAt := sess.GraceUntil
+		if closeAt.IsZero() {
+			closeAt = now
 		}
-		log.Printf(
-			"[SESSION] end id=%d cli_pid=%d closed_at=%s",
-			sess.ID,
-			sess.SessionPID,
-			sess.ClosedAt.Format(time.RFC3339Nano),
-		)
-		delete(st.sessions, sessionPID)
+		closeSessionLocked(sess, closeAt)
+		delete(st.sessions, id)
+		if st.activeSessionID == id {
+			st.activeSessionID = 0
+		}
 	}
 }
 
+// closeSessionLocked is the terminal transition. After this point the session
+// no longer accepts events and only its persisted logs remain.
+func closeSessionLocked(sess *Session, closedAt time.Time) {
+	if sess == nil || sess.IsClosed {
+		return
+	}
+	sess.IsClosed = true
+	sess.ClosedAt = closedAt
+	log.Printf(
+		"[SESSION] end id=%d cli_pid=%d closed_at=%s",
+		sess.ID,
+		sess.SessionPID,
+		sess.ClosedAt.Format(time.RFC3339Nano),
+	)
+}
+
+// markSessionClosing starts the post-exit grace window so late-arriving root
+// or child events can still be attached to the same CLI invocation.
 func markSessionClosing(sess *Session, closedAt time.Time) {
 	if sess == nil || sess.IsClosed {
 		return
@@ -240,6 +203,8 @@ func markSessionClosing(sess *Session, closedAt time.Time) {
 	sess.GraceUntil = closedAt.Add(sessionGracePeriod)
 }
 
+// sessionAcceptsEvents reports whether the session can still absorb new events.
+// Open sessions always accept; closing sessions accept only until GraceUntil.
 func sessionAcceptsEvents(sess *Session, now time.Time) bool {
 	if sess == nil || sess.IsClosed {
 		return false
@@ -250,6 +215,8 @@ func sessionAcceptsEvents(sess *Session, now time.Time) bool {
 	return now.Before(sess.GraceUntil) || now.Equal(sess.GraceUntil)
 }
 
+// sessionExpired reports whether the grace window is fully over and the
+// janitor should permanently close and evict the session.
 func sessionExpired(sess *Session, now time.Time) bool {
 	if sess == nil {
 		return true
@@ -263,6 +230,8 @@ func sessionExpired(sess *Session, now time.Time) bool {
 	return now.After(sess.GraceUntil)
 }
 
+// isOpenClawCLIInvocation identifies the execve that starts a user-facing
+// OpenClaw CLI conversation and therefore defines a new evaluation session.
 func isOpenClawCLIInvocation(e event.Event) bool {
 	if e.Type != event.EventExecve {
 		return false
@@ -279,6 +248,8 @@ func isOpenClawCLIInvocation(e event.Event) bool {
 	return hasOpenClaw && hasAgent && hasAgentFlag && hasMessageFlag
 }
 
+// containsArg reports whether argv contains the exact token after trimming
+// whitespace, without interpreting shell quoting or prefixes.
 func containsArg(args []string, target string) bool {
 	for _, a := range args {
 		if strings.TrimSpace(a) == target {

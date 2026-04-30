@@ -61,6 +61,8 @@ func (s *SecurityStore) Get(pid uint32) (*SecuritySnapshot, bool) {
 	return cloneSecuritySnapshot(snapshot), true
 }
 
+// readSecuritySnapshot loads one pid's current /proc security posture and
+// converts read failures into an explicit unavailable snapshot.
 func readSecuritySnapshot(pid uint32) *SecuritySnapshot {
 	mask, seccompMode, err := proc.ReadProcSecurityDetails(int(pid))
 	if err != nil {
@@ -77,6 +79,8 @@ func readSecuritySnapshot(pid uint32) *SecuritySnapshot {
 	}
 }
 
+// cloneSecuritySnapshot returns a detached copy so callers cannot mutate the
+// store's cached state through a shared pointer.
 func cloneSecuritySnapshot(snapshot *SecuritySnapshot) *SecuritySnapshot {
 	if snapshot == nil {
 		return nil

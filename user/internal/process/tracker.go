@@ -6,7 +6,6 @@ import (
 
 // TrackedInfo is the cached process metadata used to avoid repeated /proc reads.
 type TrackedInfo struct {
-	Comm        string
 	PPID        uint32
 	Depth       int
 	Transparent bool
@@ -43,11 +42,10 @@ func (t *Tracker) AddRoot(pid uint32) {
 }
 
 // Add inserts or updates cached process metadata.
-func (t *Tracker) Add(pid uint32, ppid uint32, comm string, depth int, transparent bool) {
+func (t *Tracker) Add(pid uint32, ppid uint32, depth int, transparent bool) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	t.tracked[pid] = TrackedInfo{
-		Comm:        comm,
 		PPID:        ppid,
 		Depth:       depth,
 		Transparent: transparent,
@@ -75,7 +73,7 @@ func (t *Tracker) GetInfo(pid uint32) (TrackedInfo, bool) {
 }
 
 // Propagate seeds a child entry from its parent's cached depth when an execve arrives.
-func (t *Tracker) Propagate(pid uint32, ppid uint32, comm string, transparent bool) {
+func (t *Tracker) Propagate(pid uint32, ppid uint32, transparent bool) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
@@ -90,7 +88,6 @@ func (t *Tracker) Propagate(pid uint32, ppid uint32, comm string, transparent bo
 	}
 
 	t.tracked[pid] = TrackedInfo{
-		Comm:        comm,
 		PPID:        ppid,
 		Depth:       depth,
 		Transparent: transparent,

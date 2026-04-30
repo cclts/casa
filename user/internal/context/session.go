@@ -9,8 +9,9 @@ import (
 
 // SessionState is the in-memory aggregation unit that holds process state and recent history.
 type SessionState struct {
-	ID        uint32
-	Processes map[uint32]*ProcessState
+	ID         uint32
+	SessionPID uint32
+	Processes  map[uint32]*ProcessState
 
 	RecentEvents []ObservedEvent
 	Counts       EventCounts
@@ -27,6 +28,7 @@ type SessionState struct {
 // SessionSnapshot is the exported session-level raw state view.
 type SessionSnapshot struct {
 	ID                     uint32
+	SessionPID             uint32
 	Counts                 EventCounts
 	CreatedAt              time.Time
 	UpdatedAt              time.Time
@@ -80,7 +82,6 @@ type Endpoint struct {
 type LineageNode struct {
 	PID  uint32
 	PPID uint32
-	Comm string
 }
 
 // ObservedEvent is the normalized event shape stored in recent session history.
@@ -112,9 +113,10 @@ type ObservedConnect struct {
 }
 
 // newSessionState initializes the in-memory container for one resolved session.
-func newSessionState(id uint32, createdAt time.Time) *SessionState {
+func newSessionState(id uint32, sessionPID uint32, createdAt time.Time) *SessionState {
 	return &SessionState{
 		ID:                     id,
+		SessionPID:             sessionPID,
 		Processes:              make(map[uint32]*ProcessState),
 		RecentEvents:           make([]ObservedEvent, 0, CurrentHeuristics().RecentEventLimit),
 		UniqueConnectEndpoints: make([]Endpoint, 0, 8),
@@ -161,6 +163,7 @@ func (s *SessionState) snapshot() SessionSnapshot {
 
 	return SessionSnapshot{
 		ID:                     s.ID,
+		SessionPID:             s.SessionPID,
 		Counts:                 s.Counts,
 		CreatedAt:              s.CreatedAt,
 		UpdatedAt:              s.UpdatedAt,

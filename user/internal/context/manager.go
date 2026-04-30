@@ -26,6 +26,7 @@ func NewManager() *Manager {
 // ObserveAndBuild folds one normalized event into session state and returns the updated context snapshot.
 func (m *Manager) ObserveAndBuild(
 	sessionID uint32,
+	sessionPID uint32,
 	lineage process.Lineage,
 	securityStore *process.SecurityStore,
 	e event.Event,
@@ -36,7 +37,7 @@ func (m *Manager) ObserveAndBuild(
 
 	session, ok := m.sessions[sessionID]
 	if !ok {
-		session = newSessionState(sessionID, e.Time)
+		session = newSessionState(sessionID, sessionPID, e.Time)
 		m.sessions[sessionID] = session
 	}
 
@@ -99,7 +100,7 @@ func (m *Manager) ObserveAndBuild(
 	case event.EventExit:
 		procRecord.ExitSeen = true
 		procRecord.ExitTime = e.Time
-		if e.PID == sessionID || session.allProcessesExited() {
+		if e.PID == session.SessionPID || session.allProcessesExited() {
 			session.IsClosed = true
 			session.ClosedAt = e.Time
 		}
@@ -144,7 +145,6 @@ func rebuildLineage(lineage process.Lineage) []LineageNode {
 		out = append(out, LineageNode{
 			PID:  uint32(n.PID),
 			PPID: uint32(n.PPID),
-			Comm: n.Comm,
 		})
 	}
 	return out
