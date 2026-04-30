@@ -41,11 +41,17 @@ func Run(ctx context.Context, events <-chan event.Event, decisionEngine *decisio
 				e.PID, e.PPID, e.Comm, e.Path, len(e.Args), e.Args)
 			tracker.Propagate(e.PID, e.PPID, isTransparentRoutineExec(e))
 			sessionTracker.ObserveExecve(e)
+		} else if e.Type == event.EventExit {
+			log.Printf("[RAW EXIT] pid=%d ppid=%d comm=%q", e.PID, e.PPID, e.Comm)
 		}
 
 		// Skip events if neither the process nor its parent is in our watchlist.
 		if !tracker.Exists(e.PID) && !tracker.Exists(e.PPID) {
 			auditMonitor.DiscardEvent(e)
+			if e.Type == event.EventExit {
+				sessionTracker.ObserveExit(e)
+				tracker.Remove(e.PID)
+			}
 			continue
 		}
 
