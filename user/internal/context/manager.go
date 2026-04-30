@@ -11,22 +11,21 @@ import (
 // Manager owns the mutable session state used to build context snapshots over time.
 type Manager struct {
 	mu               sync.Mutex
-	sessions         map[uint32]*SessionState
+	sessions         map[process.SessionID]*SessionState
 	recentEventLimit int
 }
 
 // NewManager creates the in-memory session store used by context generation.
 func NewManager() *Manager {
 	return &Manager{
-		sessions:         make(map[uint32]*SessionState),
+		sessions:         make(map[process.SessionID]*SessionState),
 		recentEventLimit: CurrentHeuristics().RecentEventLimit,
 	}
 }
 
 // ObserveAndBuild folds one normalized event into session state and returns the updated context snapshot.
 func (m *Manager) ObserveAndBuild(
-	sessionID uint32,
-	sessionPID uint32,
+	sessionID process.SessionID,
 	lineage process.Lineage,
 	securityStore *process.SecurityStore,
 	e event.Event,
@@ -37,7 +36,7 @@ func (m *Manager) ObserveAndBuild(
 
 	session, ok := m.sessions[sessionID]
 	if !ok {
-		session = newSessionState(sessionID, sessionPID, e.Time)
+		session = newSessionState(uint32(sessionID), e.Time)
 		m.sessions[sessionID] = session
 	}
 
@@ -97,14 +96,10 @@ func (m *Manager) ObserveAndBuild(
 			Addr: e.Addr,
 			Port: e.Port,
 		})
-	case event.EventExit:
-		procRecord.ExitSeen = true
-		procRecord.ExitTime = e.Time
-		if e.PID == session.SessionPID || session.allProcessesExited() {
-			session.IsClosed = true
-			session.ClosedAt = e.Time
+		case event.EventExit:
+			procRecord.ExitSeen = true
+			procRecord.ExitTime = e.Time
 		}
-	}
 
 	session.RecentEvents = append(session.RecentEvents, ObservedEvent{
 		Type:  e.Type,
@@ -121,8 +116,8 @@ func (m *Manager) ObserveAndBuild(
 	return BuildContext(session, e.PID)
 }
 
-// SnapshotSession returns the current raw session snapshot for one session.
-func (m *Manager) SnapshotSession(sessionID uint32) (SessionSnapshot, bool) {
+// SnapshotSessionByID returns the current raw session snapshot for one session.
+func (m *Manager) SnapshotSessionByID(sessionID process.SessionID) (SessionSnapshot, bool) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -134,6 +129,22 @@ func (m *Manager) SnapshotSession(sessionID uint32) (SessionSnapshot, bool) {
 	return session.snapshot(), true
 }
 
+// CloseSession marks one session closed at the supplied time without mutating
+// any per-process raw facts.
+func (m *Manager) CloseSession(sessionID process.SessionID, closedAt time.Time) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	session, ok := m.sessions[sessionID]
+	if !ok {
+		return
+	}
+
+	session.IsClosed = true
+	session.ClosedAt = closedAt
+	session.UpdatedAt = closedAt
+}
+
 // rebuildLineage converts the process package's lineage model into the context-local shape.
 func rebuildLineage(lineage process.Lineage) []LineageNode {
 	if len(lineage.Nodes) == 0 {
@@ -143,8 +154,8 @@ func rebuildLineage(lineage process.Lineage) []LineageNode {
 	out := make([]LineageNode, 0, len(lineage.Nodes))
 	for _, n := range lineage.Nodes {
 		out = append(out, LineageNode{
-			PID:  uint32(n.PID),
-			PPID: uint32(n.PPID),
+			PID:  n.PID,
+			PPID: n.PPID,
 		})
 	}
 	return out

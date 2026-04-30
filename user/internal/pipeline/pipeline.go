@@ -13,8 +13,12 @@ import (
 	"github.com/cclts/casa/user/internal/process"
 )
 
-// Run is the main user-space analysis loop. It enriches events with process state,
-// derives context, evaluates risk, and writes audit records.
+// Run is the main user-space analysis loop.
+// It keeps four responsibilities separate:
+// 1. stage every raw event for events.log
+// 2. maintain tracker/session lifecycle state
+// 3. derive context only for events that belong to the active CLI session
+// 4. evaluate and emit higher-level audit/session records
 func Run(ctx context.Context, events <-chan event.Event, decisionEngine *decision.Engine, auditMonitor *audit.Monitor) {
 	tracker := process.NewTracker()
 	sessionTracker := process.NewSessionTracker(tracker)
@@ -34,35 +38,39 @@ func Run(ctx context.Context, events <-chan event.Event, decisionEngine *decisio
 			log.Printf("Audit: event_write_failed err=%v", err)
 		}
 
-		// Tracking: Update the process lineage tree
-		// On new process execution, propagate the tracking status from parent to child.
+		// Execve is the only point where tracker depth propagation and session
+		// start detection happen. Other syscalls reuse the already-known tree.
 		if e.Type == event.EventExecve {
 			tracker.Propagate(e.PID, e.PPID, isTransparentRoutineExec(e))
 			sessionTracker.ObserveExecve(e)
-		} 
+		} else if e.Type == event.EventExit {
+			// log.Printf("[RAW EXIT] pid=%d ppid=%d comm=%q", e.PID, e.PPID, e.Comm)
+			sessionTracker.ObserveExit(e)
+		}
 
-		// Skip events if neither the process nor its parent is in our watchlist.
+		// First gate: keep only events from the tracked OpenClaw process tree.
 		if !tracker.Exists(e.PID) && !tracker.Exists(e.PPID) {
 			auditMonitor.DiscardEvent(e)
 			if e.Type == event.EventExit {
-				sessionTracker.ObserveExit(e)
 				tracker.Remove(e.PID)
 			}
 			continue
 		}
 
-		// Resolve the event into the coarse "worker session" boundary the system uses today.
+		// Second gate: within the OpenClaw tree, keep only events that belong
+		// to an active CLI invocation session.
 		sess, ok := sessionTracker.Resolve(e)
 		if !ok {
 			auditMonitor.DiscardEvent(e)
 			if e.Type == event.EventExit {
-				sessionTracker.ObserveExit(e)
 				tracker.Remove(e.PID)
 			}
 			continue
 		}
 
-		if e.Type != event.EventExit {
+		// Security posture is sampled lazily on execve so later opens/connects for
+		// the same pid can reuse the cached snapshot.
+		if e.Type == event.EventExecve {
 			securityStore.Ensure(e.PID)
 		}
 
@@ -86,15 +94,19 @@ func Run(ctx context.Context, events <-chan event.Event, decisionEngine *decisio
 			log.Printf("  ➤ Exit: pid=%d tid=%d", e.PID, e.TID)
 		}
 
-		// The tracker caches parent/child depth so later stages do not have to re-walk /proc.
-		info, _ := tracker.GetInfo(e.PID)
+		// Non-EXIT noise stays in events.log only; it does not pollute session raw state.
 		if e.Type != event.EventExit && !ShouldIngestIntoContext(e) {
 			auditMonitor.DiscardEvent(e)
 			continue
 		}
-		lineage := process.BuildLineage(int(e.PID), tracker, decisionEngine.LineageMaxDepth())
-		contextSnapshot := contextManager.ObserveAndBuild(uint32(sess.ID), sess.SessionPID, lineage, securityStore, e, info.Depth)
-		rawSession, ok := contextManager.SnapshotSession(uint32(sess.ID))
+
+		info, _ := tracker.GetInfo(e.PID)
+		lineage := process.BuildLineage(e.PID, tracker, decisionEngine.LineageMaxDepth())
+		contextSnapshot := contextManager.ObserveAndBuild(sess.ID, lineage, securityStore, e, info.Depth)
+		if e.Type == event.EventExit && e.PID == sess.SessionPID {
+			contextManager.CloseSession(sess.ID, e.Time)
+		}
+		rawSession, ok := contextManager.SnapshotSessionByID(sess.ID)
 		if !ok {
 			auditMonitor.DiscardEvent(e)
 			continue
@@ -107,7 +119,6 @@ func Run(ctx context.Context, events <-chan event.Event, decisionEngine *decisio
 		}
 
 		if e.Type == event.EventExit {
-			sessionTracker.ObserveExit(e)
 			tracker.Remove(e.PID)
 		}
 	}
