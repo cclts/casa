@@ -11,6 +11,7 @@ import (
 type SessionState struct {
 	ID        uint32
 	Processes map[uint32]*ProcessState
+	LastExecPID uint32
 
 	RecentEvents []ObservedEvent
 	Counts       EventCounts

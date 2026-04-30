@@ -17,7 +17,6 @@ const (
 // Profile is the flattened feature set extracted from a richer context snapshot.
 type Profile struct {
 	SessionID uint32
-	TargetPID uint32
 	Features  map[string]any
 }
 
@@ -91,7 +90,6 @@ func (r Result) CrossesAlertThreshold() bool {
 func BuildProfile(ctx context.Context, _ int) Profile {
 	features := map[string]any{
 		"session_id": int64(ctx.SessionID),
-		"target_pid": int64(ctx.TargetPID),
 		"execution": map[string]any{
 			"suspicious_path_exec":       ctx.Execution.SuspiciousPathExec,
 			"chain_depth":                int64(ctx.Execution.ChainDepth),
@@ -126,7 +124,6 @@ func BuildProfile(ctx context.Context, _ int) Profile {
 
 	return Profile{
 		SessionID: ctx.SessionID,
-		TargetPID: ctx.TargetPID,
 		Features:  features,
 	}
 }

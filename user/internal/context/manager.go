@@ -53,7 +53,6 @@ func (m *Manager) ObserveAndBuild(
 	}
 	procRecord.LineageDepth = depth
 	procRecord.LastSeen = e.Time
-	procRecord.Lineage = rebuildLineage(lineage)
 	if e.Type != event.EventExit {
 		procRecord.ExitSeen = false
 		procRecord.ExitTime = time.Time{}
@@ -70,6 +69,8 @@ func (m *Manager) ObserveAndBuild(
 		procRecord.Comm = basenameFromPath(e.Path)
 		procRecord.Args = append([]string(nil), e.Args...)
 		procRecord.ExecCount++
+		procRecord.Lineage = rebuildLineage(lineage)
+		session.LastExecPID = e.PID
 		session.Counts.Execs++
 	case event.EventOpenat:
 		procRecord.OpenCount++
@@ -96,10 +97,10 @@ func (m *Manager) ObserveAndBuild(
 			Addr: e.Addr,
 			Port: e.Port,
 		})
-		case event.EventExit:
-			procRecord.ExitSeen = true
-			procRecord.ExitTime = e.Time
-		}
+	case event.EventExit:
+		procRecord.ExitSeen = true
+		procRecord.ExitTime = e.Time
+	}
 
 	session.RecentEvents = append(session.RecentEvents, ObservedEvent{
 		Type:  e.Type,
@@ -113,7 +114,7 @@ func (m *Manager) ObserveAndBuild(
 	})
 	session.RecentEvents = trimRecentEvents(session.RecentEvents, m.recentEventLimit)
 
-	return BuildContext(session, e.PID)
+	return BuildContext(session)
 }
 
 // SnapshotSessionByID returns the current raw session snapshot for one session.

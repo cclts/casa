@@ -1,21 +1,22 @@
 package context
 
-// BuildContext materializes a context snapshot for one process inside a session.
-func BuildContext(state *SessionState, targetPID uint32) Context {
+// BuildContext materializes a session-scoped context snapshot.
+func BuildContext(state *SessionState) Context {
 	ctx := Context{
 		SessionID: state.ID,
-		TargetPID: targetPID,
 	}
 
-	procState := state.Processes[targetPID]
+	procState := state.Processes[state.LastExecPID]
 	if procState == nil {
+		ctx.History = buildHistoricalContext(state)
+		ctx.File = buildFileContext(state)
 		return ctx
 	}
 
 	ctx.Execution = buildExecutionChainContext(state, procState)
 	ctx.Capability = buildCapabilityContext(procState)
-	ctx.History = buildHistoricalContext(state, targetPID)
-	ctx.File = buildFileContext(procState)
+	ctx.History = buildHistoricalContext(state)
+	ctx.File = buildFileContext(state)
 
 	return ctx
 }

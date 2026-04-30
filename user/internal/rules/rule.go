@@ -78,7 +78,6 @@ func NewEngine(path string) (*Engine, error) {
 		cel.Variable("history", cel.DynType),
 		cel.Variable("file", cel.DynType),
 		cel.Variable("session_id", cel.IntType),
-		cel.Variable("target_pid", cel.IntType),
 	)
 	if err != nil {
 		return nil, err

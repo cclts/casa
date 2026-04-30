@@ -4,7 +4,6 @@ package context
 // and user-defined CEL rules.
 type Context struct {
 	SessionID uint32
-	TargetPID uint32
 
 	Execution  ExecutionContext
 	Capability CapabilityContext

@@ -14,17 +14,24 @@ import (
 )
 
 // Run is the main user-space analysis loop.
-// It keeps four responsibilities separate:
-// 1. stage every raw event for events.log
-// 2. maintain tracker/session lifecycle state
-// 3. derive context only for events that belong to the active CLI session
-// 4. evaluate and emit higher-level audit/session records
+//
+// Order matters here:
+// 1. stage the raw event for events.log
+// 2. update only the minimal tracker/session lifecycle state
+// 3. first gate: drop anything outside the tracked OpenClaw tree
+// 4. only after that, do heavier enrichment such as security reads and
+//    exec lineage reconstruction
+// 5. keep only events that occur while a CLI session window is active
+// 6. fold accepted events into raw session state, derive session context, and
+//    emit audit/session records
 func Run(ctx context.Context, events <-chan event.Event, decisionEngine *decision.Engine, auditMonitor *audit.Monitor) {
 	tracker := process.NewTracker()
 	sessionTracker := process.NewSessionTracker(tracker)
-	sessionTracker.StartJanitor(ctx, 500*time.Millisecond)
 	securityStore := process.NewSecurityStore()
 	contextManager := casacontext.NewManager()
+	sessionTracker.StartJanitor(ctx, 500*time.Millisecond, func(id process.SessionID, closedAt time.Time) {
+		contextManager.CloseSession(id, closedAt)
+	})
 
 	if err := process.BootstrapOpenClaw(tracker, securityStore); err != nil {
 		log.Println("bootstrap error:", err)
@@ -38,13 +45,12 @@ func Run(ctx context.Context, events <-chan event.Event, decisionEngine *decisio
 			log.Printf("Audit: event_write_failed err=%v", err)
 		}
 
-		// Execve is the only point where tracker depth propagation and session
-		// start detection happen. Other syscalls reuse the already-known tree.
+		// Execve is the only event that can extend the tracked tree and start a
+		// new CLI session. EXIT only updates closing state for the current session.
 		if e.Type == event.EventExecve {
 			tracker.Propagate(e.PID, e.PPID, isTransparentRoutineExec(e))
 			sessionTracker.ObserveExecve(e)
 		} else if e.Type == event.EventExit {
-			// log.Printf("[RAW EXIT] pid=%d ppid=%d comm=%q", e.PID, e.PPID, e.Comm)
 			sessionTracker.ObserveExit(e)
 		}
 
@@ -57,21 +63,24 @@ func Run(ctx context.Context, events <-chan event.Event, decisionEngine *decisio
 			continue
 		}
 
-		// Second gate: within the OpenClaw tree, keep only events that belong
-		// to an active CLI invocation session.
-		sess, ok := sessionTracker.Resolve(e)
+		// Heavier per-pid enrichment only happens after the tree-membership gate.
+		// Today only execve needs these extra reads.
+		var lineage process.Lineage
+		if e.Type == event.EventExecve {
+			securityStore.Ensure(e.PID)
+			lineage = process.BuildLineage(e.PID, tracker, decisionEngine.LineageMaxDepth())
+		}
+
+		// SessionTracker only maintains the current CLI session window. Once the
+		// event passed the tree-membership gate, the remaining question is whether
+		// that session window is still active at this event timestamp.
+		sess, ok := sessionTracker.ActiveSession(e.Time)
 		if !ok {
 			auditMonitor.DiscardEvent(e)
 			if e.Type == event.EventExit {
 				tracker.Remove(e.PID)
 			}
 			continue
-		}
-
-		// Security posture is sampled lazily on execve so later opens/connects for
-		// the same pid can reuse the cached snapshot.
-		if e.Type == event.EventExecve {
-			securityStore.Ensure(e.PID)
 		}
 
 		switch e.Type {
@@ -94,18 +103,18 @@ func Run(ctx context.Context, events <-chan event.Event, decisionEngine *decisio
 			log.Printf("  ➤ Exit: pid=%d tid=%d", e.PID, e.TID)
 		}
 
-		// Non-EXIT noise stays in events.log only; it does not pollute session raw state.
+		// Some known-noisy patterns still stay in events.log, but should not
+		// mutate session raw state or derived context.
 		if e.Type != event.EventExit && !ShouldIngestIntoContext(e) {
 			auditMonitor.DiscardEvent(e)
 			continue
 		}
 
 		info, _ := tracker.GetInfo(e.PID)
-		lineage := process.BuildLineage(e.PID, tracker, decisionEngine.LineageMaxDepth())
+
+		// ObserveAndBuild first updates raw session/process state, then returns the
+		// current session-scoped derived context snapshot for decision/audit.
 		contextSnapshot := contextManager.ObserveAndBuild(sess.ID, lineage, securityStore, e, info.Depth)
-		if e.Type == event.EventExit && e.PID == sess.SessionPID {
-			contextManager.CloseSession(sess.ID, e.Time)
-		}
 		rawSession, ok := contextManager.SnapshotSessionByID(sess.ID)
 		if !ok {
 			auditMonitor.DiscardEvent(e)
@@ -113,7 +122,8 @@ func Run(ctx context.Context, events <-chan event.Event, decisionEngine *decisio
 		}
 		result := decisionEngine.Evaluate(contextSnapshot)
 
-		// Audit output is best-effort: analysis should continue even if disk logging fails.
+		// Audit output is best-effort; one failed sink write should not stop later
+		// events from continuing through the analysis pipeline.
 		if err := auditMonitor.Record(e, contextSnapshot, rawSession, result); err != nil {
 			log.Printf("Audit: write_failed err=%v", err)
 		}

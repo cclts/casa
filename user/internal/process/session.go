@@ -22,11 +22,8 @@ type Session struct {
 	SessionPID uint32
 
 	CreatedAt  time.Time
-	LastSeen   time.Time
-	ClosedAt   time.Time
+	ClosingAt  time.Time
 	GraceUntil time.Time
-	IsClosing  bool
-	IsClosed   bool
 }
 
 // SessionTracker maps observed pids back to the active OpenClaw CLI invocation.
@@ -51,7 +48,7 @@ func NewSessionTracker(tracker *Tracker) *SessionTracker {
 }
 
 // StartJanitor periodically expires closing sessions after their grace period elapses.
-func (st *SessionTracker) StartJanitor(ctx context.Context, interval time.Duration) {
+func (st *SessionTracker) StartJanitor(ctx context.Context, interval time.Duration, onExpired func(SessionID, time.Time)) {
 	ticker := time.NewTicker(interval)
 	go func() {
 		defer ticker.Stop()
@@ -60,17 +57,27 @@ func (st *SessionTracker) StartJanitor(ctx context.Context, interval time.Durati
 			case <-ctx.Done():
 				return
 			case now := <-ticker.C:
-				st.Expire(now)
+				for _, expired := range st.Expire(now) {
+					if onExpired != nil {
+						onExpired(expired.ID, expired.ClosedAt)
+					}
+				}
 			}
 		}
 	}()
 }
 
-// Expire closes sessions whose grace period elapsed.
-func (st *SessionTracker) Expire(now time.Time) {
+type ExpiredSession struct {
+	ID       SessionID
+	ClosedAt time.Time
+}
+
+// Expire closes sessions whose grace period elapsed and returns the sessions
+// that transitioned to closed during this sweep.
+func (st *SessionTracker) Expire(now time.Time) []ExpiredSession {
 	st.mu.Lock()
 	defer st.mu.Unlock()
-	st.expireSessionsLocked(now)
+	return st.expireSessionsLocked(now)
 }
 
 // ObserveExecve updates session lifecycle on execve boundaries.
@@ -88,7 +95,6 @@ func (st *SessionTracker) ObserveExecve(e event.Event) {
 			ID:         id,
 			SessionPID: e.PID,
 			CreatedAt:  e.Time,
-			LastSeen:   e.Time,
 		}
 		st.sessions[id] = sess
 		st.activeSessionID = id
@@ -102,28 +108,6 @@ func (st *SessionTracker) ObserveExecve(e event.Event) {
 		)
 		return
 	}
-}
-
-// Resolve attaches an arbitrary event back to the current CLI session window.
-// In the evaluation-first model, a session is only a time window. If there is
-// an active/closing CLI session and the event still belongs to the tracked
-// OpenClaw process tree, the event is attributed to that session.
-func (st *SessionTracker) Resolve(e event.Event) (*Session, bool) {
-	st.mu.Lock()
-	defer st.mu.Unlock()
-
-	st.expireSessionsLocked(e.Time)
-
-	sess, ok := st.activeSessionLocked(e.Time)
-	if !ok {
-		return nil, false
-	}
-	if !st.tracker.Exists(e.PID) && !st.tracker.Exists(e.PPID) {
-		return nil, false
-	}
-
-	sess.LastSeen = e.Time
-	return sess, true
 }
 
 // ObserveExit updates closing state on process exit. Only the CLI invocation
@@ -144,6 +128,15 @@ func (st *SessionTracker) ObserveExit(e event.Event) {
 	}
 }
 
+// ActiveSession returns the single active/closing session window, if any.
+func (st *SessionTracker) ActiveSession(now time.Time) (*Session, bool) {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+
+	st.expireSessionsLocked(now)
+	return st.activeSessionLocked(now)
+}
+
 // activeSessionLocked returns the single active/closing session used by the
 // evaluation-first model after verifying it still accepts events at `now`.
 func (st *SessionTracker) activeSessionLocked(now time.Time) (*Session, bool) {
@@ -151,7 +144,10 @@ func (st *SessionTracker) activeSessionLocked(now time.Time) (*Session, bool) {
 		return nil, false
 	}
 	sess, ok := st.sessions[st.activeSessionID]
-	if !ok || !sessionAcceptsEvents(sess, now) {
+	if !ok {
+		return nil, false
+	}
+	if !sess.ClosingAt.IsZero() && now.After(sess.GraceUntil) {
 		return nil, false
 	}
 	return sess, true
@@ -160,7 +156,8 @@ func (st *SessionTracker) activeSessionLocked(now time.Time) (*Session, bool) {
 // expireSessionsLocked performs the actual janitor sweep. Sessions only leave
 // memory after their grace period elapses; at that point they are finalized,
 // logged once, and detached from the active-session pointer.
-func (st *SessionTracker) expireSessionsLocked(now time.Time) {
+func (st *SessionTracker) expireSessionsLocked(now time.Time) []ExpiredSession {
+	var expired []ExpiredSession
 	for id, sess := range st.sessions {
 		if !sessionExpired(sess, now) {
 			continue
@@ -169,50 +166,41 @@ func (st *SessionTracker) expireSessionsLocked(now time.Time) {
 		if closeAt.IsZero() {
 			closeAt = now
 		}
-		closeSessionLocked(sess, closeAt)
+			closeSessionLocked(sess, closeAt)
+			expired = append(expired, ExpiredSession{
+				ID:       sess.ID,
+				ClosedAt: closeAt,
+			})
 		delete(st.sessions, id)
 		if st.activeSessionID == id {
 			st.activeSessionID = 0
 		}
 	}
+	return expired
 }
 
 // closeSessionLocked is the terminal transition. After this point the session
 // no longer accepts events and only its persisted logs remain.
 func closeSessionLocked(sess *Session, closedAt time.Time) {
-	if sess == nil || sess.IsClosed {
+	if sess == nil {
 		return
 	}
-	sess.IsClosed = true
-	sess.ClosedAt = closedAt
 	log.Printf(
 		"[SESSION] end id=%d cli_pid=%d closed_at=%s",
 		sess.ID,
 		sess.SessionPID,
-		sess.ClosedAt.Format(time.RFC3339Nano),
+		closedAt.Format(time.RFC3339Nano),
 	)
 }
 
 // markSessionClosing starts the post-exit grace window so late-arriving root
 // or child events can still be attached to the same CLI invocation.
 func markSessionClosing(sess *Session, closedAt time.Time) {
-	if sess == nil || sess.IsClosed {
+	if sess == nil || !sess.ClosingAt.IsZero() {
 		return
 	}
-	sess.IsClosing = true
+	sess.ClosingAt = closedAt
 	sess.GraceUntil = closedAt.Add(sessionGracePeriod)
-}
-
-// sessionAcceptsEvents reports whether the session can still absorb new events.
-// Open sessions always accept; closing sessions accept only until GraceUntil.
-func sessionAcceptsEvents(sess *Session, now time.Time) bool {
-	if sess == nil || sess.IsClosed {
-		return false
-	}
-	if !sess.IsClosing {
-		return true
-	}
-	return now.Before(sess.GraceUntil) || now.Equal(sess.GraceUntil)
 }
 
 // sessionExpired reports whether the grace window is fully over and the
@@ -221,10 +209,7 @@ func sessionExpired(sess *Session, now time.Time) bool {
 	if sess == nil {
 		return true
 	}
-	if sess.IsClosed {
-		return true
-	}
-	if !sess.IsClosing {
+	if sess.ClosingAt.IsZero() {
 		return false
 	}
 	return now.After(sess.GraceUntil)
