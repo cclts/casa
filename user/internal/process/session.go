@@ -222,7 +222,7 @@ func isOpenClawCLIInvocation(e event.Event) bool {
 	args := e.Args
 	base := strings.ToLower(filepath.Base(strings.TrimSpace(e.Path)))
 
-	hasOpenClaw := base == "openclaw" || containsArg(args, "openclaw")
+	hasOpenClaw := base == "openclaw" || containsArgBase(args, "openclaw")
 	hasAgent := containsArg(args, "agent")
 	hasAgentFlag := containsArg(args, "--agent")
 	hasMessageFlag := containsArg(args, "-m") || containsArg(args, "--message")
@@ -230,11 +230,10 @@ func isOpenClawCLIInvocation(e event.Event) bool {
 	return hasOpenClaw && hasAgent && hasAgentFlag && hasMessageFlag
 }
 
-// containsArg reports whether argv contains the exact token after trimming
-// whitespace, without interpreting shell quoting or prefixes.
-func containsArg(args []string, target string) bool {
+func containsArgBase(args []string, target string) bool {
 	for _, a := range args {
-		if strings.TrimSpace(a) == target {
+		a = strings.TrimSpace(a)
+		if strings.ToLower(filepath.Base(a)) == target {
 			return true
 		}
 	}
