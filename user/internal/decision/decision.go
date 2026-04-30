@@ -88,37 +88,38 @@ func (r Result) CrossesAlertThreshold() bool {
 
 // BuildProfile converts rich context into a flat feature map that rules can score.
 func BuildProfile(ctx context.Context, _ int) Profile {
+	execution := aggregateExecutionFeatures(ctx)
+	capability := aggregateCapabilityFeatures(ctx)
+
 	features := map[string]any{
 		"session_id": int64(ctx.SessionID),
 		"execution": map[string]any{
-			"suspicious_path_exec":       ctx.Execution.SuspiciousPathExec,
-			"chain_depth":                int64(ctx.Execution.ChainDepth),
-			"deep_chain":                 ctx.Execution.DeepChain,
-			"shell_in_chain":             ctx.Execution.ShellInChain,
-			"network_tool_in_chain":      ctx.Execution.NetworkToolInChain,
-			"interpreter_in_chain":       ctx.Execution.InterpreterInChain,
-			"container_runtime_in_chain": ctx.Execution.ContainerRuntimeInChain,
-			"memfd_or_deleted_exec":      ctx.Execution.MemfdOrDeletedExec,
+			"suspicious_path_exec":       execution.SuspiciousPathExec,
+			"chain_depth":                int64(execution.ChainDepth),
+			"deep_chain":                 execution.DeepChain,
+			"shell_in_chain":             execution.ShellInChain,
+			"network_tool_in_chain":      execution.NetworkToolInChain,
+			"interpreter_in_chain":       execution.InterpreterInChain,
+			"container_runtime_in_chain": execution.ContainerRuntimeInChain,
+			"memfd_or_deleted_exec":      execution.MemfdOrDeletedExec,
 		},
 		"capability": map[string]any{
-			"has_dangerous_caps": ctx.Capability.HasDangerousCaps,
-			"dangerous_count":    int64(len(ctx.Capability.DangerousCaps)),
-			"seccomp_disabled":   !ctx.Capability.CapabilityUnknown && ctx.Capability.SeccompDisabled,
+			"has_dangerous_caps": capability.HasDangerousCaps,
+			"dangerous_count":    int64(capability.DangerousCount),
+			"seccomp_disabled":   capability.SeccompDisabled,
 		},
 		"history": map[string]any{
-			"connect_then_exec":      ctx.History.ConnectThenExec,
-			"sensitive_then_network": ctx.History.SensitiveThenNetwork,
-			"sensitive_then_execve":  ctx.History.SensitiveThenExecve,
-			"burst_connect":          ctx.History.BurstConnect,
-			"burst_exec":             ctx.History.BurstExec,
-			"unique_open_path_count": int64(ctx.History.UniqueOpenPathCount),
-			"exec_count":             int64(ctx.History.ExecCount),
-			"open_count":             int64(ctx.History.OpenCount),
-			"connect_count":          int64(ctx.History.ConnectCount),
-		},
-		"file": map[string]any{
-			"write_then_exec_same_path": ctx.File.WriteThenExecSamePath,
-			"opened_deleted_path":       ctx.File.OpenedDeletedPath,
+			"connect_then_exec":         ctx.History.ConnectThenExec,
+			"sensitive_then_network":    ctx.History.SensitiveThenNetwork,
+			"sensitive_then_execve":     ctx.History.SensitiveThenExecve,
+			"burst_connect":             ctx.History.BurstConnect,
+			"burst_exec":                ctx.History.BurstExec,
+			"unique_open_path_count":    int64(ctx.History.UniqueOpenPathCount),
+			"exec_count":                int64(ctx.History.ExecCount),
+			"open_count":                int64(ctx.History.OpenCount),
+			"connect_count":             int64(ctx.History.ConnectCount),
+			"write_then_exec_same_path": ctx.History.WriteThenExecSamePath,
+			"opened_deleted_path":       ctx.History.OpenedDeletedPath,
 		},
 	}
 
@@ -126,4 +127,52 @@ func BuildProfile(ctx context.Context, _ int) Profile {
 		SessionID: ctx.SessionID,
 		Features:  features,
 	}
+}
+
+type aggregatedExecutionFeatures struct {
+	ChainDepth              int
+	SuspiciousPathExec      bool
+	DeepChain               bool
+	ShellInChain            bool
+	NetworkToolInChain      bool
+	InterpreterInChain      bool
+	ContainerRuntimeInChain bool
+	MemfdOrDeletedExec      bool
+}
+
+type aggregatedCapabilityFeatures struct {
+	DangerousCount   int
+	HasDangerousCaps bool
+	SeccompDisabled  bool
+}
+
+func aggregateExecutionFeatures(ctx context.Context) aggregatedExecutionFeatures {
+	var out aggregatedExecutionFeatures
+	for _, item := range ctx.ExecutionChains {
+		if item.ChainDepth > out.ChainDepth {
+			out.ChainDepth = item.ChainDepth
+		}
+		out.SuspiciousPathExec = out.SuspiciousPathExec || item.SuspiciousPathExec
+		out.DeepChain = out.DeepChain || item.DeepChain
+		out.ShellInChain = out.ShellInChain || item.ShellInChain
+		out.NetworkToolInChain = out.NetworkToolInChain || item.NetworkToolInChain
+		out.InterpreterInChain = out.InterpreterInChain || item.InterpreterInChain
+		out.ContainerRuntimeInChain = out.ContainerRuntimeInChain || item.ContainerRuntimeInChain
+		out.MemfdOrDeletedExec = out.MemfdOrDeletedExec || item.MemfdOrDeletedExec
+	}
+	return out
+}
+
+func aggregateCapabilityFeatures(ctx context.Context) aggregatedCapabilityFeatures {
+	var out aggregatedCapabilityFeatures
+	for _, item := range ctx.Capabilities {
+		if len(item.DangerousCaps) > out.DangerousCount {
+			out.DangerousCount = len(item.DangerousCaps)
+		}
+		out.HasDangerousCaps = out.HasDangerousCaps || item.HasDangerousCaps
+		if !item.CapabilityUnknown {
+			out.SeccompDisabled = out.SeccompDisabled || item.SeccompDisabled
+		}
+	}
+	return out
 }

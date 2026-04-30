@@ -9,7 +9,6 @@ import (
 	"github.com/cclts/casa/user/internal/context"
 	"github.com/cclts/casa/user/internal/decision"
 	"github.com/cclts/casa/user/internal/event"
-	"github.com/cclts/casa/user/internal/rules"
 )
 
 const sessionFlushInterval = 30 * time.Second
@@ -226,7 +225,6 @@ func (m *Monitor) Record(e event.Event, ctx context.Context, raw context.Session
 	}
 
 	session := m.getOrCreateSessionLocked(ctx.SessionID, e.Time)
-	updateSessionAggregate(session, result)
 	m.rawSessions[ctx.SessionID] = raw
 
 	if result.Score >= result.LogThreshold {
@@ -299,7 +297,7 @@ func (m *Monitor) writeSessionRecordLocked(raw context.SessionSnapshot, session 
 		Timestamp: formatTimestamp(ts),
 		SessionID: raw.ID,
 		Reason:    reason,
-		Session:   snapshotSessionRecord(raw, session),
+		Session:   snapshotSessionRecord(raw),
 	}
 
 	return writeJSONL(m.sessionFile, record, "session log")
@@ -323,9 +321,7 @@ func (m *Monitor) getOrCreateSessionLocked(sessionID uint32, createdAt time.Time
 	}
 
 	session = &sessionAggregate{
-		ID:                 sessionID,
-		TriggeredRules:     make([]rules.TriggeredRule, 0, 8),
-		triggeredRuleIndex: make(map[string]struct{}),
+		ID: sessionID,
 	}
 	m.sessions[sessionID] = session
 	return session

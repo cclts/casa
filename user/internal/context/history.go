@@ -31,17 +31,19 @@ func buildHistoricalContext(state *SessionState) HistoricalContext {
 	}
 
 	return HistoricalContext{
-		RecentSyscalls:       recent,
-		ExecCount:            execCount,
-		OpenCount:            openCount,
-		ConnectCount:         connectCount,
-		TimeWindowSeconds:    lastEventUnix - firstEventUnix,
-		ConnectThenExec:      detectConnectThenExec(state.RecentEvents),
-		SensitiveThenNetwork: detectSensitiveThenNetwork(state),
-		SensitiveThenExecve:  detectSensitiveThenExecve(state.RecentEvents),
-		BurstConnect:         detectBurstEvent(state.RecentEvents, event.EventConnect, CurrentHeuristics().BurstConnectThreshold),
-		BurstExec:            detectBurstEvent(state.RecentEvents, event.EventExecve, CurrentHeuristics().BurstExecThreshold),
-		UniqueOpenPathCount:  uniqueSessionOpenPathCount(state),
+		RecentSyscalls:        recent,
+		ExecCount:             execCount,
+		OpenCount:             openCount,
+		ConnectCount:          connectCount,
+		TimeWindowSeconds:     lastEventUnix - firstEventUnix,
+		ConnectThenExec:       detectConnectThenExec(state.RecentEvents),
+		SensitiveThenNetwork:  detectSensitiveThenNetwork(state),
+		SensitiveThenExecve:   detectSensitiveThenExecve(state.RecentEvents),
+		BurstConnect:          detectBurstEvent(state.RecentEvents, event.EventConnect, CurrentHeuristics().BurstConnectThreshold),
+		BurstExec:             detectBurstEvent(state.RecentEvents, event.EventExecve, CurrentHeuristics().BurstExecThreshold),
+		UniqueOpenPathCount:   uniqueSessionOpenPathCount(state),
+		WriteThenExecSamePath: detectWriteThenExecSamePath(state),
+		OpenedDeletedPath:     detectOpenedDeletedPath(state),
 	}
 }
 

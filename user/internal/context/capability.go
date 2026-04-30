@@ -17,6 +17,7 @@ func buildCapabilityContext(procState *ProcessState) CapabilityContext {
 	snapshot := procState.Security
 	if snapshot == nil || !snapshot.Available {
 		return CapabilityContext{
+			PID:               procState.PID,
 			CapabilityUnknown: true,
 		}
 	}
@@ -24,6 +25,7 @@ func buildCapabilityContext(procState *ProcessState) CapabilityContext {
 	dangerous := activeDangerousCaps(snapshot.CapEffMask)
 
 	return CapabilityContext{
+		PID:               procState.PID,
 		CapEffMask:        snapshot.CapEffMask,
 		DangerousCaps:     dangerous,
 		SeccompMode:       snapshot.SeccompMode,

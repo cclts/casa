@@ -1,7 +1,7 @@
 package context
 
 // buildExecutionChainContext projects lineage and execution metadata into derived facts.
-func buildExecutionChainContext(state *SessionState, procState *ProcessState) ExecutionContext {
+func buildExecutionChainContext(state *SessionState, procState *ProcessState) ExecutionChainContext {
 	heuristics := CurrentHeuristics()
 	lineage := append([]LineageNode(nil), procState.Lineage...)
 	if len(lineage) == 0 {
@@ -11,7 +11,9 @@ func buildExecutionChainContext(state *SessionState, procState *ProcessState) Ex
 		}}
 	}
 
-	return ExecutionContext{
+	return ExecutionChainContext{
+		PID:                     procState.PID,
+		PPID:                    procState.PPID,
 		Lineage:                 lineage,
 		BinaryPath:              procState.ExecPath,
 		UID:                     procState.UID,

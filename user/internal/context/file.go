@@ -1,13 +1,5 @@
 package context
 
-// buildFileContext summarizes file-centric derived facts for the whole session.
-func buildFileContext(state *SessionState) FileContext {
-	return FileContext{
-		WriteThenExecSamePath: detectWriteThenExecSamePath(state),
-		OpenedDeletedPath:     detectOpenedDeletedPath(state),
-	}
-}
-
 func detectWriteThenExecSamePath(state *SessionState) bool {
 	if state == nil {
 		return false

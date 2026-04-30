@@ -70,7 +70,6 @@ func (m *Manager) ObserveAndBuild(
 		procRecord.Args = append([]string(nil), e.Args...)
 		procRecord.ExecCount++
 		procRecord.Lineage = rebuildLineage(lineage)
-		session.LastExecPID = e.PID
 		session.Counts.Execs++
 	case event.EventOpenat:
 		procRecord.OpenCount++
@@ -114,7 +113,7 @@ func (m *Manager) ObserveAndBuild(
 	})
 	session.RecentEvents = trimRecentEvents(session.RecentEvents, m.recentEventLimit)
 
-	return BuildContext(session)
+	return BuildContext(session, e.PID)
 }
 
 // SnapshotSessionByID returns the current raw session snapshot for one session.

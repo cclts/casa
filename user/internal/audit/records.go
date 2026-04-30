@@ -1,9 +1,6 @@
 package audit
 
-import (
-	"github.com/cclts/casa/user/internal/decision"
-	"github.com/cclts/casa/user/internal/rules"
-)
+import "github.com/cclts/casa/user/internal/decision"
 
 // EventLogRecord is the JSONL payload written for every observed event.
 type EventLogRecord struct {
@@ -33,16 +30,13 @@ type SessionLogRecord struct {
 
 // SessionRecord stores the monitor's current view of a session.
 type SessionRecord struct {
-	CreatedAt              string         `json:"created_at"`
-	UpdatedAt              string         `json:"updated_at"`
-	ClosedAt               string         `json:"closed_at,omitempty"`
-	IsClosed               bool           `json:"is_closed"`
-	EventCounts            EventCounts    `json:"event_counts"`
-	UniqueConnectEndpoints []Endpoint     `json:"unique_connect_endpoints"`
-	MaxLineageDepth        int            `json:"max_lineage_depth"`
-	MaxScore               int            `json:"max_score"`
-	AlertTriggered         bool           `json:"alert_triggered"`
-	FinalDecision          DecisionRecord `json:"final_decision"`
+	CreatedAt              string      `json:"created_at"`
+	UpdatedAt              string      `json:"updated_at"`
+	ClosedAt               string      `json:"closed_at,omitempty"`
+	IsClosed               bool        `json:"is_closed"`
+	EventCounts            EventCounts `json:"event_counts"`
+	UniqueConnectEndpoints []Endpoint  `json:"unique_connect_endpoints"`
+	MaxLineageDepth        int         `json:"max_lineage_depth"`
 }
 
 type EventCounts struct {
@@ -86,14 +80,16 @@ type DecisionRecord struct {
 	Score          int                   `json:"score"`
 	LogThreshold   int                   `json:"log_threshold"`
 	AlertThreshold int                   `json:"alert_threshold"`
-	TriggeredRules []rules.TriggeredRule `json:"triggered_rules"`
+	TriggeredRules []TriggeredRuleRecord `json:"triggered_rules"`
 }
 
 type sessionAggregate struct {
-	ID                 uint32
-	MaxScore           int
-	AlertTriggered     bool
-	FinalDecision      DecisionRecord
-	TriggeredRules     []rules.TriggeredRule
-	triggeredRuleIndex map[string]struct{}
+	ID             uint32
+	AlertTriggered bool
+}
+
+type TriggeredRuleRecord struct {
+	Name   string `json:"name"`
+	Expr   string `json:"expr,omitempty"`
+	Weight int    `json:"weight,omitempty"`
 }

@@ -14,7 +14,7 @@ func buildEventLogRecord(e event.Event, ctx context.Context) EventLogRecord {
 		UID:       e.UID,
 		Type:      e.Type.String(),
 		Comm:      e.Comm,
-		Depth:     ctx.Execution.ChainDepth,
+		Depth:     targetExecutionDepth(ctx),
 	}
 	populateEventLogFields(&record, e)
 	return record
@@ -77,4 +77,13 @@ func uint32Ptr(v uint32) *uint32 {
 
 func uint16Ptr(v uint16) *uint16 {
 	return &v
+}
+
+func targetExecutionDepth(ctx context.Context) int {
+	for _, item := range ctx.ExecutionChains {
+		if item.PID == ctx.TargetPID {
+			return item.ChainDepth
+		}
+	}
+	return 0
 }
