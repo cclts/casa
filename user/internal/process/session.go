@@ -230,6 +230,15 @@ func isOpenClawCLIInvocation(e event.Event) bool {
 	return hasOpenClaw && hasAgent && hasAgentFlag && hasMessageFlag
 }
 
+func containsArg(args []string, target string) bool {
+	for _, a := range args {
+		if strings.TrimSpace(a) == target {
+			return true
+		}
+	}
+	return false
+}
+
 func containsArgBase(args []string, target string) bool {
 	for _, a := range args {
 		a = strings.TrimSpace(a)
