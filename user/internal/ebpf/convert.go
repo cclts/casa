@@ -16,13 +16,6 @@ var (
 
 // ToEvent converts the fixed-width ring buffer payload into the internal event model.
 func ToEvent(e Event) event.Event {
-	ip := net.IPv4(
-		byte(e.Daddr),
-		byte(e.Daddr>>8),
-		byte(e.Daddr>>16),
-		byte(e.Daddr>>24),
-	)
-
 	// Args are copied out of the fixed-size kernel payload and truncated to the
 	// maximum argument slots that the eBPF side exports.
 	args := make([]string, 0, e.Argc)
@@ -34,10 +27,23 @@ func ToEvent(e Event) event.Event {
 		args = append(args, argStr)
 	}
 
-	port := (e.Dport << 8) | (e.Dport >> 8)
 	eventTime, err := eventTimeFromKtime(e.TsNS)
 	if err != nil {
 		eventTime = time.Time{}
+	}
+
+	eventType := mapEventType(e.Type)
+	addr := ""
+	port := uint16(0)
+	if eventType == event.EventConnect {
+		ip := net.IPv4(
+			byte(e.Daddr),
+			byte(e.Daddr>>8),
+			byte(e.Daddr>>16),
+			byte(e.Daddr>>24),
+		)
+		addr = ip.String()
+		port = (e.Dport << 8) | (e.Dport >> 8)
 	}
 
 	return event.Event{
@@ -46,7 +52,7 @@ func ToEvent(e Event) event.Event {
 		PPID: e.Ppid,
 		UID:  e.Uid,
 
-		Addr: ip.String(),
+		Addr: addr,
 		Port: port,
 
 		Comm:  string(bytes.TrimRight(e.Comm[:], "\x00")),
@@ -59,7 +65,7 @@ func ToEvent(e Event) event.Event {
 		Time:      eventTime,
 		TimeHuman: formatEventTime(eventTime),
 
-		Type: mapEventType(e.Type),
+		Type: eventType,
 	}
 }
 

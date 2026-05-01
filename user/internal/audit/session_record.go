@@ -65,20 +65,28 @@ func convertRecentEvents(items []context.ObservedEvent) []RecentEventRecord {
 			Type:      item.Type.String(),
 			PID:       item.PID,
 		}
-		if item.Path != "" {
-			record.Path = stringPtr(item.Path)
-		}
-		if item.Flags != 0 {
-			record.Flags = uint32Ptr(item.Flags)
-		}
-		if item.Mode != 0 {
-			record.Mode = uint32Ptr(item.Mode)
-		}
-		if item.Addr != "" {
-			record.Addr = stringPtr(item.Addr)
-		}
-		if item.Port != 0 {
-			record.Port = uint16Ptr(item.Port)
+		switch item.Type.String() {
+		case "EXECVE":
+			if item.Path != "" {
+				record.Path = stringPtr(item.Path)
+			}
+		case "OPENAT":
+			if item.Path != "" {
+				record.Path = stringPtr(item.Path)
+			}
+			if item.Flags != 0 {
+				record.Flags = uint32Ptr(item.Flags)
+			}
+			if item.Mode != 0 {
+				record.Mode = uint32Ptr(item.Mode)
+			}
+		case "CONNECT":
+			if item.Addr != "" {
+				record.Addr = stringPtr(item.Addr)
+			}
+			if item.Port != 0 {
+				record.Port = uint16Ptr(item.Port)
+			}
 		}
 		out = append(out, record)
 	}

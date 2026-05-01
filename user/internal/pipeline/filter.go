@@ -1,6 +1,7 @@
 package pipeline
 
 import (
+	"net/netip"
 	"path/filepath"
 	"strings"
 
@@ -8,7 +9,10 @@ import (
 )
 
 func ShouldIngestIntoContext(e event.Event) bool {
-	return !isRuntimeLoaderNoise(e) && !isTransparentRoutineExec(e)
+	return !isRuntimeLoaderNoise(e) &&
+		!isRoutineSessionFileNoise(e) &&
+		!isTransparentRoutineExec(e) &&
+		!isIgnorableConnectNoise(e)
 }
 
 func isRuntimeLoaderNoise(e event.Event) bool {
@@ -58,6 +62,56 @@ func isTransparentRoutineExec(e event.Event) bool {
 	default:
 		return false
 	}
+}
+
+func isRoutineSessionFileNoise(e event.Event) bool {
+	if e.Type != event.EventOpenat {
+		return false
+	}
+
+	p := strings.ToLower(strings.TrimSpace(e.Path))
+	if p == "" {
+		return false
+	}
+
+	if strings.Contains(p, "/.openclaw/") {
+		return true
+	}
+
+	switch {
+	case strings.HasSuffix(p, "/package.json"),
+		strings.HasSuffix(p, "/package-lock.json"),
+		strings.HasSuffix(p, "/etc/hosts"),
+		strings.HasSuffix(p, "/.bashrc"),
+		strings.HasSuffix(p, "/.profile"),
+		strings.Contains(p, "/gconv/gconv-modules.cache"),
+		strings.Contains(p, "/etc/bash.bashrc"):
+		return true
+	default:
+		return false
+	}
+}
+
+func isIgnorableConnectNoise(e event.Event) bool {
+	if e.Type != event.EventConnect {
+		return false
+	}
+
+	addr := strings.TrimSpace(e.Addr)
+	if addr == "" || addr == "0.0.0.0" {
+		return true
+	}
+
+	parsed, err := netip.ParseAddr(addr)
+	if err != nil {
+		return false
+	}
+
+	if e.Port == 53 && parsed.IsLoopback() {
+		return true
+	}
+
+	return false
 }
 
 func hasExactArgs(args []string, expected ...string) bool {
