@@ -12,8 +12,7 @@ func TestIsOpenClawCLIInvocationRequiresMatchingNodeAndOpenClawPaths(t *testing.
 		Type: event.EventExecve,
 		Path: "/home/ubuntu/.nvm/versions/node/v24.14.1/bin/node",
 		Args: []string{
-			"/home/ubuntu/.nvm/versions/node/v24.14.1/bin/node",
-			"--disable-warning=ExperimentalWarning",
+			"node",
 			"/home/ubuntu/.nvm/versions/node/v24.14.1/bin/openclaw",
 			"agent",
 			"--agent",
@@ -28,12 +27,13 @@ func TestIsOpenClawCLIInvocationRequiresMatchingNodeAndOpenClawPaths(t *testing.
 	}
 }
 
-func TestIsOpenClawCLIInvocationRejectsOuterLauncherShape(t *testing.T) {
+func TestIsOpenClawCLIInvocationAllowsRuntimeSelfReexecShape(t *testing.T) {
 	e := event.Event{
 		Type: event.EventExecve,
 		Path: "/home/ubuntu/.nvm/versions/node/v24.14.1/bin/node",
 		Args: []string{
-			"node",
+			"/home/ubuntu/.nvm/versions/node/v24.14.1/bin/node",
+			"--disable-warning=ExperimentalWarning",
 			"/home/ubuntu/.nvm/versions/node/v24.14.1/bin/openclaw",
 			"agent",
 			"--agent",
@@ -43,8 +43,8 @@ func TestIsOpenClawCLIInvocationRejectsOuterLauncherShape(t *testing.T) {
 		},
 	}
 
-	if isOpenClawCLIInvocation(e) {
-		t.Fatalf("expected outer launcher shape not to start a session")
+	if !isOpenClawCLIInvocation(e) {
+		t.Fatalf("expected runtime self-reexec shape to still count as openclaw cli invocation")
 	}
 }
 
@@ -117,7 +117,63 @@ func TestObserveExecveStartsOnlyOneActiveSession(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected active session to remain available")
 	}
-	if sess.SessionPID != second.PID {
-		t.Fatalf("expected runtime self-reexec pid to own the session, got %d", sess.SessionPID)
+	if sess.SessionPID != first.PID {
+		t.Fatalf("expected outer successful launcher pid to own the session, got %d", sess.SessionPID)
+	}
+}
+
+func TestObserveExitRequiresLeaderThreadToCloseSession(t *testing.T) {
+	tracker := NewSessionTracker()
+	now := time.Now()
+
+	start := event.Event{
+		Type: event.EventExecve,
+		PID:  296908,
+		PPID: 296900,
+		TID:  296908,
+		Time: now,
+		Path: "/home/ubuntu/.nvm/versions/node/v24.14.1/bin/node",
+		Args: []string{
+			"node",
+			"/home/ubuntu/.nvm/versions/node/v24.14.1/bin/openclaw",
+			"agent",
+			"--agent",
+			"main",
+			"-m",
+			"hey",
+		},
+	}
+	tracker.ObserveExecve(start)
+
+	threadExit := event.Event{
+		Type: event.EventExit,
+		PID:  296908,
+		TID:  296931,
+		Time: now.Add(time.Second),
+	}
+	tracker.ObserveExit(threadExit)
+
+	sess, ok := tracker.activeSessionLocked(threadExit.Time)
+	if !ok {
+		t.Fatalf("expected session to remain active after non-leader thread exit")
+	}
+	if !sess.ClosingAt.IsZero() {
+		t.Fatalf("expected non-leader thread exit not to start closing window")
+	}
+
+	leaderExit := event.Event{
+		Type: event.EventExit,
+		PID:  296908,
+		TID:  296908,
+		Time: now.Add(2 * time.Second),
+	}
+	tracker.ObserveExit(leaderExit)
+
+	sess, ok = tracker.activeSessionLocked(leaderExit.Time)
+	if !ok {
+		t.Fatalf("expected session to still be visible during grace period")
+	}
+	if sess.ClosingAt.IsZero() {
+		t.Fatalf("expected leader exit to start closing window")
 	}
 }

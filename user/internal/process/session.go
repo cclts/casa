@@ -124,7 +124,7 @@ func (st *SessionTracker) ObserveExit(e event.Event) {
 	if !ok {
 		return
 	}
-	if e.PID == sess.SessionPID {
+	if e.PID == sess.SessionPID && e.TID == sess.SessionPID {
 		markSessionClosing(sess, e.Time)
 	}
 }
@@ -240,11 +240,7 @@ func isOpenClawCLIInvocation(e event.Event) bool {
 		return false
 	}
 
-	if !sameNormalizedDir(nodePath, openClawPath) {
-		return false
-	}
-
-	return isRuntimeSelfReexec(nodePath, e.Args)
+	return sameNormalizedDir(nodePath, openClawPath)
 }
 
 func containsArg(args []string, target string) bool {
@@ -273,19 +269,6 @@ func resolveOpenClawScriptArg(args []string) (string, bool) {
 	}
 
 	return "", false
-}
-
-func isRuntimeSelfReexec(nodePath string, args []string) bool {
-	if len(args) == 0 {
-		return false
-	}
-
-	first := strings.TrimSpace(args[0])
-	if first == "" {
-		return false
-	}
-
-	return filepath.Clean(first) == filepath.Clean(strings.TrimSpace(nodePath))
 }
 
 func sameNormalizedDir(left, right string) bool {
