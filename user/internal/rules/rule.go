@@ -22,6 +22,7 @@ type AnalysisConfig struct {
 	RecentEventLimit           int      `json:"recent_event_limit,omitempty"`
 	MaxPerProcessArtifacts     int      `json:"max_per_process_artifacts,omitempty"`
 	DeepChainThreshold         int      `json:"deep_chain_threshold,omitempty"`
+	BurstOpenThreshold         int      `json:"burst_open_threshold,omitempty"`
 	BurstConnectThreshold      int      `json:"burst_connect_threshold,omitempty"`
 	BurstExecThreshold         int      `json:"burst_exec_threshold,omitempty"`
 	BurstWindowSeconds         int      `json:"burst_window_seconds,omitempty"`
@@ -33,6 +34,7 @@ type AnalysisConfig struct {
 	NetworkToolNames           []string `json:"network_tool_names,omitempty"`
 	InterpreterNames           []string `json:"interpreter_names,omitempty"`
 	ContainerRuntimeNames      []string `json:"container_runtime_names,omitempty"`
+	DangerousCapabilityNames   []string `json:"dangerous_capability_names,omitempty"`
 }
 
 // Thresholds defines the cutoffs that map numeric score to a decision action.
@@ -76,7 +78,6 @@ func NewEngine(path string) (*Engine, error) {
 		cel.Variable("execution", cel.DynType),
 		cel.Variable("capability", cel.DynType),
 		cel.Variable("history", cel.DynType),
-		cel.Variable("file", cel.DynType),
 		cel.Variable("session_id", cel.IntType),
 	)
 	if err != nil {

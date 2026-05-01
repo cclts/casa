@@ -5,6 +5,7 @@
     "max_per_process_artifacts": 16,
 
     "deep_chain_threshold": 5,
+    "burst_open_threshold": 10,
     "burst_connect_threshold": 5,
     "burst_exec_threshold": 5,
     "burst_window_seconds": 10,
@@ -101,6 +102,13 @@
       "crun",
       "podman",
       "nerdctl"
+    ],
+
+    "dangerous_capability_names": [
+      "CAP_SYS_ADMIN",
+      "CAP_NET_ADMIN",
+      "CAP_NET_RAW",
+      "CAP_SYS_PTRACE"
     ]
   },
 
@@ -193,7 +201,7 @@
     {
       "name": "shell_network_behavior",
       "description": "Shell lineage performs outbound network activity.",
-      "expr": "execution.shell_in_chain && history.connect_count >= 1",
+      "expr": "execution.shell_in_chain && history.sensitive_then_network",
       "weight": 5,
       "enabled": true
     },
@@ -212,6 +220,13 @@
       "enabled": true
     },
 
+    {
+      "name": "burst_open_from_shell_chain",
+      "description": "Shell lineage creates a burst of file opens.",
+      "expr": "execution.shell_in_chain && history.burst_open",
+      "weight": 3,
+      "enabled": true
+    },
     {
       "name": "burst_network_from_deep_chain",
       "description": "Deep execution chain followed by bursty network activity.",
@@ -235,38 +250,23 @@
     },
 
     {
-      "name": "many_unique_open_paths",
-      "description": "Session touches many unique file paths.",
-      "expr": "history.unique_open_path_count >= 50",
-      "weight": 2,
-      "enabled": true
-    },
-    {
-      "name": "heavy_file_discovery",
-      "description": "Session performs many open operations across many unique paths.",
-      "expr": "history.open_count >= 20 && history.unique_open_path_count >= 30",
-      "weight": 3,
-      "enabled": true
-    },
-
-    {
       "name": "write_then_exec_same_path",
       "description": "File is written and later executed from the same path.",
-      "expr": "file.write_then_exec_same_path",
+      "expr": "history.write_then_exec_same_path",
       "weight": 6,
       "enabled": true
     },
     {
       "name": "write_then_temp_exec",
       "description": "File is written and later executed from a suspicious temp-like path.",
-      "expr": "file.write_then_exec_same_path && execution.suspicious_path_exec",
+      "expr": "history.write_then_exec_same_path && execution.suspicious_path_exec",
       "weight": 5,
       "enabled": true
     },
     {
       "name": "opened_deleted_path",
       "description": "Process opens a deleted file path.",
-      "expr": "file.opened_deleted_path",
+      "expr": "history.opened_deleted_path",
       "weight": 4,
       "enabled": true
     },

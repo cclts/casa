@@ -1,13 +1,13 @@
 package pipeline
 
 import (
-	"context"
+	stdcontext "context"
 	"log"
 	"strings"
 	"time"
 
 	"github.com/cclts/casa/user/internal/audit"
-	casacontext "github.com/cclts/casa/user/internal/context"
+	"github.com/cclts/casa/user/internal/context"
 	"github.com/cclts/casa/user/internal/decision"
 	"github.com/cclts/casa/user/internal/event"
 	"github.com/cclts/casa/user/internal/process"
@@ -24,11 +24,11 @@ import (
 //  5. keep only events that occur while a CLI session window is active
 //  6. fold accepted events into raw session state, derive session context, and
 //     emit audit/session records
-func Run(ctx context.Context, events <-chan event.Event, decisionEngine *decision.Engine, auditMonitor *audit.Monitor) {
+func Run(ctx stdcontext.Context, events <-chan event.Event, decisionEngine *decision.Engine, auditMonitor *audit.Monitor) {
 	tracker := process.NewTracker()
 	sessionTracker := process.NewSessionTracker()
 	securityStore := process.NewSecurityStore()
-	contextManager := casacontext.NewManager()
+	contextManager := context.NewManager()
 	sessionTracker.StartJanitor(ctx, 500*time.Millisecond, func(id process.SessionID, closedAt time.Time) {
 		contextManager.CloseSession(id, closedAt)
 	})
@@ -110,21 +110,24 @@ func Run(ctx context.Context, events <-chan event.Event, decisionEngine *decisio
 			continue
 		}
 
-		info, _ := tracker.GetInfo(e.PID)
+		depth := tracker.EventDepth(e.PID, e.PPID)
 
-		// ObserveAndBuild first updates raw session/process state, then returns the
-		// current session-scoped derived context snapshot for decision/audit.
-		contextSnapshot := contextManager.ObserveAndBuild(sess.ID, lineage, securityStore, e, info.Depth)
+		contextManager.Observe(sess.ID, lineage, securityStore, e)
+		ctxSnapshot, ok := contextManager.ApplyEvent(sess.ID, e)
+		if !ok {
+			auditMonitor.DiscardEvent(e)
+			continue
+		}
 		rawSession, ok := contextManager.SnapshotSessionByID(sess.ID)
 		if !ok {
 			auditMonitor.DiscardEvent(e)
 			continue
 		}
-		result := decisionEngine.Evaluate(contextSnapshot)
+		result := decisionEngine.Evaluate(ctxSnapshot)
 
 		// Audit output is best-effort; one failed sink write should not stop later
 		// events from continuing through the analysis pipeline.
-		if err := auditMonitor.Record(e, contextSnapshot, rawSession, result); err != nil {
+		if err := auditMonitor.Record(e, rawSession, depth, result); err != nil {
 			log.Printf("Audit: write_failed err=%v", err)
 		}
 

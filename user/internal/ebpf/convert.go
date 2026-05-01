@@ -9,6 +9,11 @@ import (
 	"github.com/cclts/casa/user/internal/proc"
 )
 
+var (
+	eventTimeFromKtime = proc.EventTimeFromKtime
+	formatEventTime    = proc.FormatEventTime
+)
+
 // ToEvent converts the fixed-width ring buffer payload into the internal event model.
 func ToEvent(e Event) event.Event {
 	ip := net.IPv4(
@@ -30,7 +35,7 @@ func ToEvent(e Event) event.Event {
 	}
 
 	port := (e.Dport << 8) | (e.Dport >> 8)
-	eventTime, err := proc.EventTimeFromKtime(e.TsNS)
+	eventTime, err := eventTimeFromKtime(e.TsNS)
 	if err != nil {
 		eventTime = time.Time{}
 	}
@@ -44,15 +49,15 @@ func ToEvent(e Event) event.Event {
 		Addr: ip.String(),
 		Port: port,
 
-		Comm: string(bytes.TrimRight(e.Comm[:], "\x00")),
-		Path: string(bytes.TrimRight(e.Filename[:], "\x00")),
-		Args: args,
+		Comm:  string(bytes.TrimRight(e.Comm[:], "\x00")),
+		Path:  string(bytes.TrimRight(e.Filename[:], "\x00")),
+		Args:  args,
 		Flags: e.Flags,
 		Mode:  e.Mode,
 
 		KTimeNS:   e.TsNS,
 		Time:      eventTime,
-		TimeHuman: proc.FormatEventTime(eventTime),
+		TimeHuman: formatEventTime(eventTime),
 
 		Type: mapEventType(e.Type),
 	}

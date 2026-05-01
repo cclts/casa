@@ -74,22 +74,6 @@ func trimConnectEvents(items []ObservedConnect) []ObservedConnect {
 	return items[len(items)-limit:]
 }
 
-// appendUniqueEndpoint keeps a bounded de-duplicated set of recent remote destinations per session.
-func appendUniqueEndpoint(items []Endpoint, endpoint Endpoint) []Endpoint {
-	for _, item := range items {
-		if item == endpoint {
-			return items
-		}
-	}
-
-	items = append(items, endpoint)
-	limit := CurrentHeuristics().MaxPerProcessArtifacts
-	if len(items) <= limit {
-		return items
-	}
-	return items[len(items)-limit:]
-}
-
 // trimRecentEvents bounds session-level history used for historical context generation.
 func trimRecentEvents(items []ObservedEvent, limit int) []ObservedEvent {
 	if len(items) <= limit {
@@ -98,28 +82,25 @@ func trimRecentEvents(items []ObservedEvent, limit int) []ObservedEvent {
 	return items[len(items)-limit:]
 }
 
-func lineageHasCommand(state *SessionState, lineage []LineageNode, names map[string]struct{}) bool {
-	for _, node := range lineage {
-		name := lineageNodeCommandName(state, node.PID)
+func lineageHasCommand(procState *ProcessState, names map[string]struct{}) bool {
+	if procState == nil {
+		return false
+	}
+	if len(procState.Lineage) == 0 {
+		name := procState.Comm
+		if procState.ExecPath != "" {
+			name = basenameFromPath(procState.ExecPath)
+		}
+		_, ok := names[normalizePath(basenameFromPath(name))]
+		return ok
+	}
+	for _, node := range procState.Lineage {
+		name := normalizePath(basenameFromPath(node.Comm))
 		if _, ok := names[name]; ok {
 			return true
 		}
 	}
 	return false
-}
-
-func lineageNodeCommandName(state *SessionState, pid uint32) string {
-	if state == nil {
-		return ""
-	}
-	procState := state.Processes[pid]
-	if procState == nil {
-		return ""
-	}
-	if procState.ExecPath != "" {
-		return normalizePath(basenameFromPath(procState.ExecPath))
-	}
-	return normalizePath(basenameFromPath(procState.Comm))
 }
 
 func nameSet(items []string) map[string]struct{} {
@@ -145,6 +126,21 @@ func openHasWriteIntent(flags uint32) bool {
 		flags&oCREAT != 0 ||
 		flags&oTRUNC != 0 ||
 		flags&oAPPEND != 0
+}
+
+func detectOpenedDeletedPath(snapshot SessionSnapshot) bool {
+	for _, procState := range snapshot.Processes {
+		if procState == nil {
+			continue
+		}
+		for _, open := range procState.Opens {
+			if isDeletedPath(open.Path) {
+				return true
+			}
+		}
+	}
+
+	return false
 }
 
 func basenameFromPath(path string) string {

@@ -30,24 +30,21 @@ type SessionLogRecord struct {
 
 // SessionRecord stores the monitor's current view of a session.
 type SessionRecord struct {
-	CreatedAt              string      `json:"created_at"`
-	UpdatedAt              string      `json:"updated_at"`
-	ClosedAt               string      `json:"closed_at,omitempty"`
-	IsClosed               bool        `json:"is_closed"`
-	EventCounts            EventCounts `json:"event_counts"`
-	UniqueConnectEndpoints []Endpoint  `json:"unique_connect_endpoints"`
-	MaxLineageDepth        int         `json:"max_lineage_depth"`
+	CreatedAt    string              `json:"created_at"`
+	UpdatedAt    string              `json:"updated_at"`
+	ClosedAt     string              `json:"closed_at,omitempty"`
+	RecentEvents []RecentEventRecord `json:"recent_events"`
 }
 
-type EventCounts struct {
-	Execs    int `json:"execs"`
-	Opens    int `json:"opens"`
-	Connects int `json:"connects"`
-}
-
-type Endpoint struct {
-	Addr string `json:"addr"`
-	Port uint16 `json:"port"`
+type RecentEventRecord struct {
+	Timestamp string  `json:"timestamp"`
+	Type      string  `json:"type"`
+	PID       uint32  `json:"pid"`
+	Path      *string `json:"path,omitempty"`
+	Flags     *uint32 `json:"flags,omitempty"`
+	Mode      *uint32 `json:"mode,omitempty"`
+	Addr      *string `json:"addr,omitempty"`
+	Port      *uint16 `json:"port,omitempty"`
 }
 
 // EventRecord stores the normalized event fields that triggered evaluation.

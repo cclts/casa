@@ -12,6 +12,7 @@ import (
 type Manager struct {
 	mu               sync.Mutex
 	sessions         map[process.SessionID]*SessionState
+	contexts         map[process.SessionID]*ContextSnapshot
 	recentEventLimit int
 }
 
@@ -19,18 +20,18 @@ type Manager struct {
 func NewManager() *Manager {
 	return &Manager{
 		sessions:         make(map[process.SessionID]*SessionState),
+		contexts:         make(map[process.SessionID]*ContextSnapshot),
 		recentEventLimit: CurrentHeuristics().RecentEventLimit,
 	}
 }
 
-// ObserveAndBuild folds one normalized event into session state and returns the updated context snapshot.
-func (m *Manager) ObserveAndBuild(
+// Observe folds one normalized event into session state.
+func (m *Manager) Observe(
 	sessionID process.SessionID,
 	lineage process.Lineage,
 	securityStore *process.SecurityStore,
 	e event.Event,
-	depth int,
-) Context {
+) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -38,12 +39,14 @@ func (m *Manager) ObserveAndBuild(
 	if !ok {
 		session = newSessionState(uint32(sessionID), e.Time)
 		m.sessions[sessionID] = session
+		m.contexts[sessionID] = &ContextSnapshot{
+			SessionID: uint32(sessionID),
+			CreatedAt: e.Time,
+			UpdatedAt: e.Time,
+		}
 	}
 
 	session.UpdatedAt = e.Time
-	if depth > session.MaxLineageDepth {
-		session.MaxLineageDepth = depth
-	}
 
 	procRecord := session.getOrCreateProcess(e.PID, e.Time)
 	procRecord.PPID = e.PPID
@@ -51,29 +54,23 @@ func (m *Manager) ObserveAndBuild(
 	if procRecord.Comm == "" {
 		procRecord.Comm = e.Comm
 	}
-	procRecord.LineageDepth = depth
 	procRecord.LastSeen = e.Time
-	if e.Type != event.EventExit {
-		procRecord.ExitSeen = false
-		procRecord.ExitTime = time.Time{}
-	}
-	if securityStore != nil {
-		if snapshot, ok := securityStore.Get(e.PID); ok {
-			procRecord.Security = snapshot
-		}
-	}
 
 	switch e.Type {
 	case event.EventExecve:
+		depth := lineageDepth(lineage)
 		procRecord.ExecPath = e.Path
 		procRecord.Comm = basenameFromPath(e.Path)
 		procRecord.Args = append([]string(nil), e.Args...)
-		procRecord.ExecCount++
-		procRecord.Lineage = rebuildLineage(lineage)
-		session.Counts.Execs++
+		procRecord.LineageDepth = depth
+		procRecord.Lineage = rebuildLineage(session, procRecord, lineage)
+		procRecord.ExitTime = time.Time{}
+		if securityStore != nil {
+			if snapshot, ok := securityStore.Get(e.PID); ok {
+				procRecord.Security = snapshot
+			}
+		}
 	case event.EventOpenat:
-		procRecord.OpenCount++
-		session.Counts.Opens++
 		procRecord.Opens = append(procRecord.Opens, ObservedOpen{
 			Path:  e.Path,
 			Flags: e.Flags,
@@ -82,8 +79,6 @@ func (m *Manager) ObserveAndBuild(
 		})
 		procRecord.Opens = trimOpenEvents(procRecord.Opens)
 	case event.EventConnect:
-		procRecord.ConnectCount++
-		session.Counts.Connects++
 		procRecord.Connects = append(procRecord.Connects, ObservedConnect{
 			Endpoint: Endpoint{
 				Addr: e.Addr,
@@ -92,12 +87,7 @@ func (m *Manager) ObserveAndBuild(
 			Time: e.Time,
 		})
 		procRecord.Connects = trimConnectEvents(procRecord.Connects)
-		session.UniqueConnectEndpoints = appendUniqueEndpoint(session.UniqueConnectEndpoints, Endpoint{
-			Addr: e.Addr,
-			Port: e.Port,
-		})
 	case event.EventExit:
-		procRecord.ExitSeen = true
 		procRecord.ExitTime = e.Time
 	}
 
@@ -112,8 +102,54 @@ func (m *Manager) ObserveAndBuild(
 		Time:  e.Time,
 	})
 	session.RecentEvents = trimRecentEvents(session.RecentEvents, m.recentEventLimit)
+}
 
-	return BuildContext(session, e.PID)
+// ApplyEvent updates the in-memory derived aggregate for one session and returns a snapshot.
+func (m *Manager) ApplyEvent(sessionID process.SessionID, e event.Event) (ContextSnapshot, bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	session, ok := m.sessions[sessionID]
+	if !ok {
+		return ContextSnapshot{}, false
+	}
+	ctxState, ok := m.contexts[sessionID]
+	if !ok {
+		ctxState = &ContextSnapshot{
+			SessionID: session.ID,
+			CreatedAt: session.CreatedAt,
+		}
+		m.contexts[sessionID] = ctxState
+	}
+
+	ctxState.UpdatedAt = session.UpdatedAt
+	if !session.ClosedAt.IsZero() {
+		ctxState.ClosedAt = session.ClosedAt
+	}
+
+	procState := session.Processes[e.PID]
+	switch e.Type {
+	case event.EventExecve:
+		if procState != nil {
+			updateExecutionAggregate(&ctxState.Execution, BuildExecutionChainContext(procState))
+			updateCapabilityAggregate(&ctxState.Capability, BuildCapabilityContext(procState))
+		}
+	case event.EventExit:
+		if procState != nil {
+			updateExecutionAggregate(&ctxState.Execution, BuildExecutionChainContext(procState))
+		}
+	}
+
+	ctxState.History = BuildHistoricalContext(session.snapshot())
+
+	return cloneContextSnapshot(ctxState), true
+}
+
+func lineageDepth(lineage process.Lineage) int {
+	if len(lineage.Nodes) == 0 {
+		return 0
+	}
+	return len(lineage.Nodes) - 1
 }
 
 // SnapshotSessionByID returns the current raw session snapshot for one session.
@@ -140,23 +176,71 @@ func (m *Manager) CloseSession(sessionID process.SessionID, closedAt time.Time) 
 		return
 	}
 
-	session.IsClosed = true
 	session.ClosedAt = closedAt
 	session.UpdatedAt = closedAt
+	if ctxState, ok := m.contexts[sessionID]; ok {
+		ctxState.ClosedAt = closedAt
+		ctxState.UpdatedAt = closedAt
+	}
 }
 
 // rebuildLineage converts the process package's lineage model into the context-local shape.
-func rebuildLineage(lineage process.Lineage) []LineageNode {
+func rebuildLineage(session *SessionState, procRecord *ProcessState, lineage process.Lineage) []LineageNode {
 	if len(lineage.Nodes) == 0 {
 		return nil
 	}
 
 	out := make([]LineageNode, 0, len(lineage.Nodes))
 	for _, n := range lineage.Nodes {
+		comm := ""
+		switch {
+		case procRecord != nil && n.PID == procRecord.PID:
+			if procRecord.ExecPath != "" {
+				comm = basenameFromPath(procRecord.ExecPath)
+			} else {
+				comm = procRecord.Comm
+			}
+		case session != nil:
+			if ancestor := session.Processes[n.PID]; ancestor != nil {
+				if ancestor.ExecPath != "" {
+					comm = basenameFromPath(ancestor.ExecPath)
+				} else {
+					comm = ancestor.Comm
+				}
+			}
+		}
+
 		out = append(out, LineageNode{
 			PID:  n.PID,
 			PPID: n.PPID,
+			Comm: comm,
 		})
 	}
 	return out
+}
+
+func updateExecutionAggregate(dst *ExecutionChainContext, src ExecutionChainContext) {
+	dst.SuspiciousPathExec = dst.SuspiciousPathExec || src.SuspiciousPathExec
+	dst.DeepChain = dst.DeepChain || src.DeepChain
+	dst.ShellInChain = dst.ShellInChain || src.ShellInChain
+	dst.NetworkToolInChain = dst.NetworkToolInChain || src.NetworkToolInChain
+	dst.InterpreterInChain = dst.InterpreterInChain || src.InterpreterInChain
+	dst.ContainerRuntimeInChain = dst.ContainerRuntimeInChain || src.ContainerRuntimeInChain
+	dst.MemfdOrDeletedExec = dst.MemfdOrDeletedExec || src.MemfdOrDeletedExec
+}
+
+func updateCapabilityAggregate(dst *CapabilityContext, src CapabilityContext) {
+	dst.CapabilityUnknown = dst.CapabilityUnknown || src.CapabilityUnknown
+	if src.DangerousCount > dst.DangerousCount {
+		dst.DangerousCount = src.DangerousCount
+	}
+	dst.HasDangerousCaps = dst.HasDangerousCaps || src.HasDangerousCaps
+	dst.SeccompDisabled = dst.SeccompDisabled || src.SeccompDisabled
+}
+
+func cloneContextSnapshot(src *ContextSnapshot) ContextSnapshot {
+	if src == nil {
+		return ContextSnapshot{}
+	}
+	return *src
 }

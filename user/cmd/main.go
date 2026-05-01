@@ -1,7 +1,7 @@
 package main
 
 import (
-	"context"
+	stdcontext "context"
 	"fmt"
 	"log"
 	"os"
@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/cclts/casa/user/internal/audit"
-	casacontext "github.com/cclts/casa/user/internal/context"
+	"github.com/cclts/casa/user/internal/context"
 	"github.com/cclts/casa/user/internal/decision"
 	"github.com/cclts/casa/user/internal/ebpf"
 	"github.com/cclts/casa/user/internal/event"
@@ -33,7 +33,7 @@ type Config struct {
 func main() {
 	cfg := loadConfig()
 
-	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	ctx, stop := signal.NotifyContext(stdcontext.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
 	if err := writePIDFile(cfg.PIDPath); err != nil {
@@ -145,21 +145,23 @@ func loadConfig() Config {
 }
 
 func configureHeuristics(analysis rules.AnalysisConfig) {
-	casacontext.ConfigureHeuristics(casacontext.Heuristics{
-		RecentEventLimit:       analysis.RecentEventLimit,
-		MaxPerProcessArtifacts: analysis.MaxPerProcessArtifacts,
-		DeepChainThreshold:     analysis.DeepChainThreshold,
-		BurstConnectThreshold:  analysis.BurstConnectThreshold,
-		BurstExecThreshold:     analysis.BurstExecThreshold,
-		BurstWindow:            time.Duration(analysis.BurstWindowSeconds) * time.Second,
-		SensitiveHistoryWindow: time.Duration(analysis.SensitiveHistoryWindowSecs) * time.Second,
-		SuspiciousPathPatterns: analysis.SuspiciousPathPatterns,
-		SensitivePathPrefixes:  analysis.SensitivePathPrefixes,
-		SensitivePathPatterns:  analysis.SensitivePathPatterns,
-		ShellNames:             analysis.ShellNames,
-		NetworkToolNames:       analysis.NetworkToolNames,
-		InterpreterNames:       analysis.InterpreterNames,
-		ContainerRuntimeNames:  analysis.ContainerRuntimeNames,
+	context.ConfigureHeuristics(context.Heuristics{
+		RecentEventLimit:         analysis.RecentEventLimit,
+		MaxPerProcessArtifacts:   analysis.MaxPerProcessArtifacts,
+		DeepChainThreshold:       analysis.DeepChainThreshold,
+		BurstOpenThreshold:       analysis.BurstOpenThreshold,
+		BurstConnectThreshold:    analysis.BurstConnectThreshold,
+		BurstExecThreshold:       analysis.BurstExecThreshold,
+		BurstWindow:              time.Duration(analysis.BurstWindowSeconds) * time.Second,
+		SensitiveHistoryWindow:   time.Duration(analysis.SensitiveHistoryWindowSecs) * time.Second,
+		SuspiciousPathPatterns:   analysis.SuspiciousPathPatterns,
+		SensitivePathPrefixes:    analysis.SensitivePathPrefixes,
+		SensitivePathPatterns:    analysis.SensitivePathPatterns,
+		ShellNames:               analysis.ShellNames,
+		NetworkToolNames:         analysis.NetworkToolNames,
+		InterpreterNames:         analysis.InterpreterNames,
+		ContainerRuntimeNames:    analysis.ContainerRuntimeNames,
+		DangerousCapabilityNames: analysis.DangerousCapabilityNames,
 	})
 }
 

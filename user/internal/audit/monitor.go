@@ -208,7 +208,7 @@ func (m *Monitor) DiscardEvent(e event.Event) {
 
 // Record writes thresholded audit logs and session snapshots. It also flushes
 // the corresponding events.log record now that session/context metadata exists.
-func (m *Monitor) Record(e event.Event, ctx context.Context, raw context.SessionSnapshot, result decision.Result) error {
+func (m *Monitor) Record(e event.Event, raw context.SessionSnapshot, depth int, result decision.Result) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -219,13 +219,13 @@ func (m *Monitor) Record(e event.Event, ctx context.Context, raw context.Session
 		return errors.New("audit monitor is closed")
 	}
 
-	if err := m.writePendingEventLocked(e, ctx); err != nil {
+	if err := m.writePendingEventLocked(e, raw.ID, depth); err != nil {
 		m.writerErr = err
 		return err
 	}
 
-	session := m.getOrCreateSessionLocked(ctx.SessionID, e.Time)
-	m.rawSessions[ctx.SessionID] = raw
+	session := m.getOrCreateSessionLocked(raw.ID, e.Time)
+	m.rawSessions[raw.ID] = raw
 
 	if result.Score >= result.LogThreshold {
 		if err := m.writeFullRecordLocked(m.auditFile, "audit log", session, e, result); err != nil {
@@ -249,19 +249,19 @@ func (m *Monitor) Record(e event.Event, ctx context.Context, raw context.Session
 		}
 	}
 
-	if e.Type == event.EventExit && raw.IsClosed && raw.ClosedAt.Equal(e.Time) {
+	if e.Type == event.EventExit && !raw.ClosedAt.IsZero() && raw.ClosedAt.Equal(e.Time) {
 		if err := m.writeSessionRecordLocked(raw, session, "session_root_exit", e.Time); err != nil {
 			m.writerErr = err
 			return err
 		}
-		delete(m.sessions, ctx.SessionID)
-		delete(m.rawSessions, ctx.SessionID)
+		delete(m.sessions, raw.ID)
+		delete(m.rawSessions, raw.ID)
 	}
 
 	return nil
 }
 
-func (m *Monitor) writePendingEventLocked(e event.Event, ctx context.Context) error {
+func (m *Monitor) writePendingEventLocked(e event.Event, sessionID uint32, depth int) error {
 	key := eventKeyFromEvent(e)
 	raw, ok := m.pending[key]
 	if ok {
@@ -270,7 +270,7 @@ func (m *Monitor) writePendingEventLocked(e event.Event, ctx context.Context) er
 		raw = e
 	}
 
-	eventRecord := buildEventLogRecord(raw, ctx)
+	eventRecord := buildEventLogRecord(raw, sessionID, depth)
 	return writeJSONL(m.eventFile, eventRecord, "event log")
 }
 
@@ -285,7 +285,7 @@ func (m *Monitor) flushSessionsLocked(reason string, clear bool) {
 			m.writerErr = err
 			return
 		}
-		if clear || raw.IsClosed {
+		if clear || !raw.ClosedAt.IsZero() {
 			delete(m.sessions, id)
 			delete(m.rawSessions, id)
 		}

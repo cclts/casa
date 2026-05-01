@@ -72,6 +72,21 @@ func (t *Tracker) GetInfo(pid uint32) (TrackedInfo, bool) {
 	return info, true
 }
 
+// EventDepth returns the tracked depth for an event pid, falling back to the
+// parent depth plus one when only the parent is currently cached.
+func (t *Tracker) EventDepth(pid uint32, ppid uint32) int {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+
+	if info, ok := t.tracked[pid]; ok {
+		return info.Depth
+	}
+	if info, ok := t.tracked[ppid]; ok {
+		return info.Depth + 1
+	}
+	return 0
+}
+
 // Propagate seeds a child entry from its parent's cached depth when an execve arrives.
 func (t *Tracker) Propagate(pid uint32, ppid uint32, transparent bool) {
 	t.mu.Lock()

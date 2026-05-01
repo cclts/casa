@@ -17,6 +17,9 @@ func isRuntimeLoaderNoise(e event.Event) bool {
 	}
 
 	p := strings.ToLower(strings.TrimSpace(e.Path))
+	if p == "" {
+		return false
+	}
 
 	if p == "/etc/ld.so.cache" {
 		return true
@@ -26,6 +29,14 @@ func isRuntimeLoaderNoise(e event.Event) bool {
 		strings.HasPrefix(p, "/usr/lib/") ||
 		strings.HasPrefix(p, "/lib64/") {
 		return strings.Contains(p, ".so")
+	}
+
+	if p == "/proc" || strings.HasPrefix(p, "/proc/") {
+		return true
+	}
+
+	if strings.Contains(p, "/.nvm/") {
+		return true
 	}
 
 	return false

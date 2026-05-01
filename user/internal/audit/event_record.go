@@ -1,20 +1,17 @@
 package audit
 
-import (
-	"github.com/cclts/casa/user/internal/context"
-	"github.com/cclts/casa/user/internal/event"
-)
+import "github.com/cclts/casa/user/internal/event"
 
-func buildEventLogRecord(e event.Event, ctx context.Context) EventLogRecord {
+func buildEventLogRecord(e event.Event, sessionID uint32, depth int) EventLogRecord {
 	record := EventLogRecord{
 		Timestamp: e.TimeHuman,
-		SessionID: ctx.SessionID,
+		SessionID: sessionID,
 		PID:       e.PID,
 		PPID:      e.PPID,
 		UID:       e.UID,
 		Type:      e.Type.String(),
 		Comm:      e.Comm,
-		Depth:     targetExecutionDepth(ctx),
+		Depth:     depth,
 	}
 	populateEventLogFields(&record, e)
 	return record
@@ -77,13 +74,4 @@ func uint32Ptr(v uint32) *uint32 {
 
 func uint16Ptr(v uint16) *uint16 {
 	return &v
-}
-
-func targetExecutionDepth(ctx context.Context) int {
-	for _, item := range ctx.ExecutionChains {
-		if item.PID == ctx.TargetPID {
-			return item.ChainDepth
-		}
-	}
-	return 0
 }

@@ -13,27 +13,20 @@ type SessionState struct {
 	Processes map[uint32]*ProcessState
 
 	RecentEvents []ObservedEvent
-	Counts       EventCounts
 
 	CreatedAt time.Time
 	UpdatedAt time.Time
 	ClosedAt  time.Time
-	IsClosed  bool
-
-	MaxLineageDepth        int
-	UniqueConnectEndpoints []Endpoint
 }
 
 // SessionSnapshot is the exported session-level raw state view.
 type SessionSnapshot struct {
-	ID                     uint32
-	Counts                 EventCounts
-	CreatedAt              time.Time
-	UpdatedAt              time.Time
-	ClosedAt               time.Time
-	IsClosed               bool
-	MaxLineageDepth        int
-	UniqueConnectEndpoints []Endpoint
+	ID           uint32
+	Processes    map[uint32]*ProcessState
+	CreatedAt    time.Time
+	UpdatedAt    time.Time
+	ClosedAt     time.Time
+	RecentEvents []ObservedEvent
 }
 
 // ProcessState is the long-lived per-process cache from which feature extraction reads.
@@ -47,10 +40,6 @@ type ProcessState struct {
 	Args         []string
 	LineageDepth int
 
-	ExecCount    int
-	OpenCount    int
-	ConnectCount int
-
 	Opens    []ObservedOpen
 	Connects []ObservedConnect
 
@@ -60,26 +49,13 @@ type ProcessState struct {
 	FirstSeen time.Time
 	LastSeen  time.Time
 	ExitTime  time.Time
-	ExitSeen  bool
-}
-
-// EventCounts stores generic session counters without embedding security semantics.
-type EventCounts struct {
-	Execs    int
-	Opens    int
-	Connects int
-}
-
-// Endpoint stores a normalized remote address observed during the session.
-type Endpoint struct {
-	Addr string
-	Port uint16
 }
 
 // LineageNode stores the reduced ancestry view needed by execution context generation.
 type LineageNode struct {
 	PID  uint32
 	PPID uint32
+	Comm string
 }
 
 // ObservedEvent is the normalized event shape stored in recent session history.
@@ -104,6 +80,12 @@ type ObservedOpen struct {
 	Time  time.Time
 }
 
+// Endpoint stores one normalized remote address observed from a process.
+type Endpoint struct {
+	Addr string
+	Port uint16
+}
+
 // ObservedConnect stores network artifacts used by historical pattern matching.
 type ObservedConnect struct {
 	Endpoint Endpoint
@@ -113,12 +95,11 @@ type ObservedConnect struct {
 // newSessionState initializes the in-memory container for one resolved session.
 func newSessionState(id uint32, createdAt time.Time) *SessionState {
 	return &SessionState{
-		ID:                     id,
-		Processes:              make(map[uint32]*ProcessState),
-		RecentEvents:           make([]ObservedEvent, 0, CurrentHeuristics().RecentEventLimit),
-		UniqueConnectEndpoints: make([]Endpoint, 0, 8),
-		CreatedAt:              createdAt,
-		UpdatedAt:              createdAt,
+		ID:           id,
+		Processes:    make(map[uint32]*ProcessState),
+		RecentEvents: make([]ObservedEvent, 0, CurrentHeuristics().RecentEventLimit),
+		CreatedAt:    createdAt,
+		UpdatedAt:    createdAt,
 	}
 }
 
@@ -140,32 +121,40 @@ func (s *SessionState) getOrCreateProcess(pid uint32, seenAt time.Time) *Process
 	return p
 }
 
-func (s *SessionState) allProcessesExited() bool {
-	if len(s.Processes) == 0 {
-		return false
-	}
-
-	for _, p := range s.Processes {
-		if !p.ExitSeen {
-			return false
-		}
-	}
-
-	return true
-}
-
 func (s *SessionState) snapshot() SessionSnapshot {
-	endpoints := make([]Endpoint, len(s.UniqueConnectEndpoints))
-	copy(endpoints, s.UniqueConnectEndpoints)
+	processes := make(map[uint32]*ProcessState, len(s.Processes))
+	for pid, procState := range s.Processes {
+		if procState == nil {
+			continue
+		}
+		processes[pid] = cloneProcessState(procState)
+	}
+	recentEvents := make([]ObservedEvent, len(s.RecentEvents))
+	copy(recentEvents, s.RecentEvents)
 
 	return SessionSnapshot{
-		ID:                     s.ID,
-		Counts:                 s.Counts,
-		CreatedAt:              s.CreatedAt,
-		UpdatedAt:              s.UpdatedAt,
-		ClosedAt:               s.ClosedAt,
-		IsClosed:               s.IsClosed,
-		MaxLineageDepth:        s.MaxLineageDepth,
-		UniqueConnectEndpoints: endpoints,
+		ID:           s.ID,
+		Processes:    processes,
+		CreatedAt:    s.CreatedAt,
+		UpdatedAt:    s.UpdatedAt,
+		ClosedAt:     s.ClosedAt,
+		RecentEvents: recentEvents,
 	}
+}
+
+func cloneProcessState(procState *ProcessState) *ProcessState {
+	if procState == nil {
+		return nil
+	}
+
+	cloned := *procState
+	cloned.Args = append([]string(nil), procState.Args...)
+	cloned.Opens = append([]ObservedOpen(nil), procState.Opens...)
+	cloned.Connects = append([]ObservedConnect(nil), procState.Connects...)
+	cloned.Lineage = append([]LineageNode(nil), procState.Lineage...)
+	if procState.Security != nil {
+		security := *procState.Security
+		cloned.Security = &security
+	}
+	return &cloned
 }

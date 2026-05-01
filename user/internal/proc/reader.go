@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"fmt"
+	"io"
 	"os"
 	"strconv"
 	"strings"
@@ -28,6 +29,10 @@ func ReadPPID(pid int) (int, error) {
 		return 0, err
 	}
 
+	return parsePPIDFromStat(data)
+}
+
+func parsePPIDFromStat(data []byte) (int, error) {
 	end := bytes.LastIndexByte(data, ')')
 	if end == -1 {
 		return 0, fmt.Errorf("invalid stat format")
@@ -93,32 +98,32 @@ func ReadBootTime() (time.Time, error) {
 			bootTimeErr = err
 			return
 		}
-
-		for _, line := range strings.Split(string(data), "\n") {
-			if !strings.HasPrefix(line, "btime ") {
-				continue
-			}
-
-			fields := strings.Fields(line)
-			if len(fields) != 2 {
-				bootTimeErr = fmt.Errorf("invalid btime format")
-				return
-			}
-
-			secs, err := strconv.ParseInt(fields[1], 10, 64)
-			if err != nil {
-				bootTimeErr = err
-				return
-			}
-
-			bootTime = time.Unix(secs, 0)
-			return
-		}
-
-		bootTimeErr = fmt.Errorf("btime not found in /proc/stat")
+		bootTime, bootTimeErr = parseBootTime(data)
 	})
 
 	return bootTime, bootTimeErr
+}
+
+func parseBootTime(data []byte) (time.Time, error) {
+	for _, line := range strings.Split(string(data), "\n") {
+		if !strings.HasPrefix(line, "btime ") {
+			continue
+		}
+
+		fields := strings.Fields(line)
+		if len(fields) != 2 {
+			return time.Time{}, fmt.Errorf("invalid btime format")
+		}
+
+		secs, err := strconv.ParseInt(fields[1], 10, 64)
+		if err != nil {
+			return time.Time{}, err
+		}
+
+		return time.Unix(secs, 0), nil
+	}
+
+	return time.Time{}, fmt.Errorf("btime not found in /proc/stat")
 }
 
 // EventTimeFromKtime converts a monotonic boot-relative kernel timestamp into wall-clock time.
@@ -150,12 +155,17 @@ func ReadProcSecurityDetails(pid int) (uint64, int, error) {
 	}
 	defer f.Close()
 
+	return parseProcSecurityDetails(f, path)
+}
+
+func parseProcSecurityDetails(r io.Reader, path string) (uint64, int, error) {
+
 	var capVal uint64
 	var seccompMode int
 	var foundCap, foundSeccomp bool
 
 	// The status file is line-oriented, so a scanner keeps parsing simple and cheap.
-	scanner := bufio.NewScanner(f)
+	scanner := bufio.NewScanner(r)
 	for scanner.Scan() {
 		line := scanner.Text()
 
@@ -187,15 +197,14 @@ func ReadProcSecurityDetails(pid int) (uint64, int, error) {
 	}
 
 	if !foundCap && !foundSeccomp {
-		return 0, 0, fmt.Errorf("missing CapEff and Seccomp in /proc/%d/status", pid)
+		return 0, 0, fmt.Errorf("missing CapEff and Seccomp in %s", path)
 	}
 	if !foundCap {
-		return 0, 0, fmt.Errorf("missing CapEff in /proc/%d/status", pid)
+		return 0, 0, fmt.Errorf("missing CapEff in %s", path)
 	}
 	if !foundSeccomp {
-		return 0, 0, fmt.Errorf("missing Seccomp in /proc/%d/status", pid)
+		return 0, 0, fmt.Errorf("missing Seccomp in %s", path)
 	}
 
 	return capVal, seccompMode, nil
 }
-

@@ -8,16 +8,11 @@ import (
 	"github.com/cclts/casa/user/internal/rules"
 )
 
-const maxSessionEndpoints = 16
-
 func snapshotSessionRecord(raw context.SessionSnapshot) SessionRecord {
 	record := SessionRecord{
-		CreatedAt:              formatTimestamp(raw.CreatedAt),
-		UpdatedAt:              formatTimestamp(raw.UpdatedAt),
-		IsClosed:               raw.IsClosed,
-		EventCounts:            EventCounts{Execs: raw.Counts.Execs, Opens: raw.Counts.Opens, Connects: raw.Counts.Connects},
-		UniqueConnectEndpoints: convertEndpoints(raw.UniqueConnectEndpoints),
-		MaxLineageDepth:        raw.MaxLineageDepth,
+		CreatedAt:    formatTimestamp(raw.CreatedAt),
+		UpdatedAt:    formatTimestamp(raw.UpdatedAt),
+		RecentEvents: convertRecentEvents(raw.RecentEvents),
 	}
 	if !raw.ClosedAt.IsZero() {
 		record.ClosedAt = formatTimestamp(raw.ClosedAt)
@@ -33,24 +28,6 @@ func buildDecisionRecord(result decision.Result) DecisionRecord {
 		AlertThreshold: result.AlertThreshold,
 		TriggeredRules: convertTriggeredRules(result.Triggered),
 	}
-}
-
-func convertEndpoints(items []context.Endpoint) []Endpoint {
-	if len(items) == 0 {
-		return nil
-	}
-	if len(items) > maxSessionEndpoints {
-		items = items[len(items)-maxSessionEndpoints:]
-	}
-
-	out := make([]Endpoint, 0, len(items))
-	for _, item := range items {
-		out = append(out, Endpoint{
-			Addr: item.Addr,
-			Port: item.Port,
-		})
-	}
-	return out
 }
 
 func formatTimestamp(ts time.Time) string {
@@ -73,5 +50,38 @@ func convertTriggeredRules(items []rules.TriggeredRule) []TriggeredRuleRecord {
 			Weight: item.Weight,
 		})
 	}
+	return out
+}
+
+func convertRecentEvents(items []context.ObservedEvent) []RecentEventRecord {
+	if len(items) == 0 {
+		return nil
+	}
+
+	out := make([]RecentEventRecord, 0, len(items))
+	for _, item := range items {
+		record := RecentEventRecord{
+			Timestamp: formatTimestamp(item.Time),
+			Type:      item.Type.String(),
+			PID:       item.PID,
+		}
+		if item.Path != "" {
+			record.Path = stringPtr(item.Path)
+		}
+		if item.Flags != 0 {
+			record.Flags = uint32Ptr(item.Flags)
+		}
+		if item.Mode != 0 {
+			record.Mode = uint32Ptr(item.Mode)
+		}
+		if item.Addr != "" {
+			record.Addr = stringPtr(item.Addr)
+		}
+		if item.Port != 0 {
+			record.Port = uint16Ptr(item.Port)
+		}
+		out = append(out, record)
+	}
+
 	return out
 }

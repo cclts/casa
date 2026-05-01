@@ -65,6 +65,9 @@ fields:
 analysis.lineage_max_depth
   used by the process/session lineage walker
 
+analysis.dangerous_capability_names
+  selects which Linux capabilities contribute to capability.has_dangerous_caps / capability.dangerous_count
+
 thresholds.log
   score >= this becomes LOG
 
@@ -92,10 +95,8 @@ the CEL input object currently looks like this:
 ```json
 {
   "session_id": 123,
-  "target_pid": 456,
   "execution": {
     "suspicious_path_exec": true,
-    "chain_depth": 5,
     "deep_chain": true,
     "shell_in_chain": true,
     "network_tool_in_chain": false,
@@ -112,14 +113,9 @@ the CEL input object currently looks like this:
     "connect_then_exec": true,
     "sensitive_then_network": false,
     "sensitive_then_execve": false,
+    "burst_open": false,
     "burst_connect": false,
     "burst_exec": false,
-    "unique_open_path_count": 2,
-    "exec_count": 1,
-    "open_count": 3,
-    "connect_count": 1
-  },
-  "file": {
     "write_then_exec_same_path": false,
     "opened_deleted_path": false
   }
@@ -131,7 +127,6 @@ available derived context:
 execution:
 ```text
 execution.suspicious_path_exec
-execution.chain_depth
 execution.deep_chain
 execution.shell_in_chain
 execution.network_tool_in_chain
@@ -152,18 +147,11 @@ history:
 history.connect_then_exec
 history.sensitive_then_network
 history.sensitive_then_execve
+history.burst_open
 history.burst_connect
 history.burst_exec
-history.unique_open_path_count
-history.exec_count
-history.open_count
-history.connect_count
-```
-
-file:
-```text
-file.write_then_exec_same_path
-file.opened_deleted_path
+history.write_then_exec_same_path
+history.opened_deleted_path
 ```
 
 CEL examples:
@@ -201,7 +189,7 @@ CEL examples:
 {
   "name": "file_drop_and_exec",
   "description": "Process wrote and then executed the same path",
-  "expr": "file.write_then_exec_same_path",
+  "expr": "history.write_then_exec_same_path",
   "weight": 6,
   "enabled": true
 }
