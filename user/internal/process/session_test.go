@@ -12,7 +12,8 @@ func TestIsOpenClawCLIInvocationRequiresMatchingNodeAndOpenClawPaths(t *testing.
 		Type: event.EventExecve,
 		Path: "/home/ubuntu/.nvm/versions/node/v24.14.1/bin/node",
 		Args: []string{
-			"node",
+			"/home/ubuntu/.nvm/versions/node/v24.14.1/bin/node",
+			"--disable-warning=ExperimentalWarning",
 			"/home/ubuntu/.nvm/versions/node/v24.14.1/bin/openclaw",
 			"agent",
 			"--agent",
@@ -24,6 +25,26 @@ func TestIsOpenClawCLIInvocationRequiresMatchingNodeAndOpenClawPaths(t *testing.
 
 	if !isOpenClawCLIInvocation(e) {
 		t.Fatalf("expected matching node/openclaw runtime paths to start a session")
+	}
+}
+
+func TestIsOpenClawCLIInvocationRejectsOuterLauncherShape(t *testing.T) {
+	e := event.Event{
+		Type: event.EventExecve,
+		Path: "/home/ubuntu/.nvm/versions/node/v24.14.1/bin/node",
+		Args: []string{
+			"node",
+			"/home/ubuntu/.nvm/versions/node/v24.14.1/bin/openclaw",
+			"agent",
+			"--agent",
+			"main",
+			"-m",
+			"hey",
+		},
+	}
+
+	if isOpenClawCLIInvocation(e) {
+		t.Fatalf("expected outer launcher shape not to start a session")
 	}
 }
 
@@ -96,7 +117,7 @@ func TestObserveExecveStartsOnlyOneActiveSession(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected active session to remain available")
 	}
-	if sess.SessionPID != first.PID {
-		t.Fatalf("expected first matching cli pid to own the session, got %d", sess.SessionPID)
+	if sess.SessionPID != second.PID {
+		t.Fatalf("expected runtime self-reexec pid to own the session, got %d", sess.SessionPID)
 	}
 }
