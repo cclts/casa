@@ -27,6 +27,7 @@ func TestShouldIngestIntoContextFiltersIgnorableConnectNoise(t *testing.T) {
 	cases := []event.Event{
 		{Type: event.EventConnect, Addr: "0.0.0.0"},
 		{Type: event.EventConnect, Addr: "127.0.0.53", Port: 53},
+		{Type: event.EventConnect, Addr: "127.0.0.1", Port: 11434},
 	}
 
 	for _, evt := range cases {

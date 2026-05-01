@@ -167,3 +167,45 @@ func TestApplyEventOpenOnlyUpdatesHistoryAggregate(t *testing.T) {
 		t.Fatalf("expected history aggregate to be updated for open/connect sequence")
 	}
 }
+
+func TestPruneTransparentRoutineShellRemovesShellArtifacts(t *testing.T) {
+	now := time.Now()
+	manager := NewManager()
+	sessionID := process.SessionID(88)
+	manager.sessions[sessionID] = &SessionState{
+		ID: uint32(sessionID),
+		Processes: map[uint32]*ProcessState{
+			100: {
+				PID:      100,
+				Comm:     "sh",
+				ExecPath: "/bin/sh",
+			},
+		},
+		RecentEvents: []ObservedEvent{
+			{Type: event.EventExecve, PID: 100, Path: "/bin/sh", Time: now},
+			{Type: event.EventExit, PID: 100, Time: now.Add(time.Second)},
+		},
+		CreatedAt: now,
+		UpdatedAt: now.Add(time.Second),
+	}
+
+	if !manager.ObserveIgnored(sessionID, event.Event{
+		Type: event.EventExecve,
+		PID:  200,
+		PPID: 100,
+		Path: "/usr/bin/ip",
+		Args: []string{"ip", "neigh", "show"},
+	}) {
+		t.Fatalf("expected transparent routine shell to be pruned")
+	}
+	raw, ok := manager.SnapshotSessionByID(sessionID)
+	if !ok {
+		t.Fatalf("expected raw session to remain available")
+	}
+	if len(raw.Processes) != 0 {
+		t.Fatalf("expected shell process to be removed from raw session")
+	}
+	if len(raw.RecentEvents) != 0 {
+		t.Fatalf("expected shell recent events to be removed from raw session")
+	}
+}

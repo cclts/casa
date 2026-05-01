@@ -106,8 +106,16 @@ func Run(ctx stdcontext.Context, events <-chan event.Event, decisionEngine *deci
 		// Some known-noisy patterns still stay in events.log, but should not
 		// mutate session raw state or derived context.
 		if e.Type != event.EventExit && !ShouldIngestIntoContext(e) {
+			contextManager.ObserveIgnored(sess.ID, e)
 			auditMonitor.DiscardEvent(e)
 			continue
+		}
+		if e.Type == event.EventExit {
+			if contextManager.ObserveIgnored(sess.ID, e) {
+				auditMonitor.DiscardEvent(e)
+				tracker.Remove(e.PID)
+				continue
+			}
 		}
 
 		depth := tracker.EventDepth(e.PID, e.PPID)

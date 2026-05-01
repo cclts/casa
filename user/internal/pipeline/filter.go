@@ -107,7 +107,7 @@ func isIgnorableConnectNoise(e event.Event) bool {
 		return false
 	}
 
-	if e.Port == 53 && parsed.IsLoopback() {
+	if parsed.IsLoopback() {
 		return true
 	}
 
