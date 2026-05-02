@@ -1,5 +1,7 @@
 package context
 
+import "sort"
+
 func syncContextTimestamps(ctxState *ContextSnapshot, session *SessionState) {
 	if ctxState == nil || session == nil {
 		return
@@ -34,4 +36,56 @@ func cloneContextSnapshot(src *ContextSnapshot) ContextSnapshot {
 		return ContextSnapshot{}
 	}
 	return *src
+}
+
+func rebuildContextAggregates(ctxState *ContextSnapshot, session *SessionState) {
+	if ctxState == nil || session == nil {
+		return
+	}
+	ctxState.Execution = rebuildExecutionAggregate(session)
+	ctxState.Capability = rebuildCapabilityAggregate(session)
+}
+
+func rebuildExecutionAggregate(session *SessionState) ExecutionChainContext {
+	if session == nil {
+		return ExecutionChainContext{}
+	}
+
+	var agg ExecutionChainContext
+	for _, pid := range sortedAggregateProcessIDs(session) {
+		procState := session.Processes[pid]
+		if procState == nil {
+			continue
+		}
+		updateExecutionAggregate(&agg, BuildExecutionChainContext(procState))
+	}
+	return agg
+}
+
+func rebuildCapabilityAggregate(session *SessionState) CapabilityContext {
+	if session == nil {
+		return CapabilityContext{}
+	}
+
+	var agg CapabilityContext
+	for _, pid := range sortedAggregateProcessIDs(session) {
+		procState := session.Processes[pid]
+		if procState == nil {
+			continue
+		}
+		updateCapabilityAggregate(&agg, BuildCapabilityContext(procState))
+	}
+	return agg
+}
+
+func sortedAggregateProcessIDs(session *SessionState) []uint32 {
+	pids := make([]uint32, 0, len(session.Processes))
+	for pid, procState := range session.Processes {
+		if procState == nil {
+			continue
+		}
+		pids = append(pids, pid)
+	}
+	sort.Slice(pids, func(i, j int) bool { return pids[i] < pids[j] })
+	return pids
 }

@@ -113,7 +113,13 @@
 
     "llm_provider_urls": [
       "https://generativelanguage.googleapis.com"
-    ]
+    ],
+
+    "channel_urls": [
+      "https://api.telegram.org"
+    ],
+
+    "configured_connect_refresh_seconds": 300
   },
 
   "thresholds": {

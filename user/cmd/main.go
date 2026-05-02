@@ -54,7 +54,7 @@ func main() {
 
 	decisionEngine := decision.NewEngine(ruleEngine)
 	configureHeuristics(decisionEngine.AnalysisConfig())
-	providerClassifier := configureProviderClassifier(decisionEngine.AnalysisConfig())
+	providerClassifier := configureConfiguredConnectClassifier(ctx, decisionEngine.AnalysisConfig())
 
 	stopReload := setupReload(decisionEngine, cfg.RulePath)
 	defer stopReload()
@@ -168,10 +168,10 @@ func configureHeuristics(analysis rules.AnalysisConfig) {
 	})
 }
 
-func configureProviderClassifier(analysis rules.AnalysisConfig) *provider.Classifier {
+func configureConfiguredConnectClassifier(ctx stdcontext.Context, analysis rules.AnalysisConfig) *provider.Classifier {
 	targets, err := provider.TargetsFromAnalysis(analysis)
 	if err != nil {
-		log.Printf("provider config invalid: %v", err)
+		log.Printf("configured connect urls invalid: %v", err)
 		return nil
 	}
 	if len(targets) == 0 {
@@ -180,10 +180,15 @@ func configureProviderClassifier(analysis rules.AnalysisConfig) *provider.Classi
 
 	endpoints, err := provider.ResolveTargets(stdcontext.Background(), net.DefaultResolver, targets)
 	if err != nil {
-		log.Printf("provider resolve failed: %v", err)
+		log.Printf("configured connect resolve failed: %v", err)
 		return nil
 	}
-	return provider.NewClassifier(endpoints)
+	classifier := provider.NewClassifier(endpoints)
+	interval := time.Duration(analysis.ConfiguredConnectRefreshS) * time.Second
+	if interval > 0 {
+		provider.StartBackgroundRefresh(ctx, net.DefaultResolver, targets, interval, classifier)
+	}
+	return classifier
 }
 
 func getenv(key, fallback string) string {

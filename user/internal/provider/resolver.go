@@ -3,9 +3,11 @@ package provider
 import (
 	stdcontext "context"
 	"fmt"
+	"log"
 	"net"
 	"net/netip"
 	"strconv"
+	"time"
 )
 
 type Resolver interface {
@@ -54,4 +56,38 @@ func parsePort(raw string) (uint16, error) {
 		return 0, err
 	}
 	return uint16(value), nil
+}
+
+func StartBackgroundRefresh(
+	ctx stdcontext.Context,
+	resolver Resolver,
+	targets []Target,
+	interval time.Duration,
+	classifier *Classifier,
+) {
+	if classifier == nil || len(targets) == 0 || interval <= 0 {
+		return
+	}
+	if resolver == nil {
+		resolver = net.DefaultResolver
+	}
+
+	ticker := time.NewTicker(interval)
+	go func() {
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				endpoints, err := ResolveTargets(ctx, resolver, targets)
+				if err != nil {
+					log.Printf("configured connect refresh failed: %v", err)
+					continue
+				}
+				classifier.ReplaceEndpoints(endpoints)
+				log.Printf("configured connect endpoints refreshed")
+			}
+		}
+	}()
 }

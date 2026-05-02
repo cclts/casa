@@ -209,3 +209,60 @@ func TestPruneTransparentRoutineShellRemovesShellArtifacts(t *testing.T) {
 		t.Fatalf("expected shell recent events to be removed from raw session")
 	}
 }
+
+func TestApplyEventRebuildsExecutionAfterTransparentShellPrune(t *testing.T) {
+	now := time.Now()
+	manager := NewManager()
+	sessionID := process.SessionID(89)
+	manager.sessions[sessionID] = &SessionState{
+		ID: uint32(sessionID),
+		Processes: map[uint32]*ProcessState{
+			100: {
+				PID:          100,
+				Comm:         "sh",
+				ExecPath:     "/bin/sh",
+				LineageDepth: 3,
+				Lineage: []LineageNode{
+					{PID: 1, Comm: "openclaw-gateway"},
+					{PID: 50, Comm: "sh"},
+				},
+			},
+			200: {
+				PID:      200,
+				Comm:     "mkdir",
+				ExecPath: "/usr/bin/mkdir",
+			},
+		},
+		RecentEvents: []ObservedEvent{
+			{Type: event.EventExecve, PID: 100, Path: "/bin/sh", Time: now},
+			{Type: event.EventExecve, PID: 200, Path: "/usr/bin/mkdir", Time: now.Add(time.Second)},
+		},
+		CreatedAt: now,
+		UpdatedAt: now.Add(time.Second),
+	}
+	manager.contexts[sessionID] = &ContextSnapshot{
+		SessionID:  uint32(sessionID),
+		CreatedAt:  now,
+		UpdatedAt:  now.Add(time.Second),
+		Execution:  BuildExecutionChainContext(manager.sessions[sessionID].Processes[100]),
+		Capability: CapabilityContext{CapabilityUnknown: true},
+	}
+
+	if !manager.ObserveIgnored(sessionID, event.Event{
+		Type: event.EventExecve,
+		PID:  300,
+		PPID: 100,
+		Path: "/usr/bin/ip",
+		Args: []string{"ip", "neigh", "show"},
+	}) {
+		t.Fatalf("expected transparent routine shell to be pruned")
+	}
+
+	snapshot, ok := manager.ApplyEvent(sessionID, event.Event{Type: event.EventExecve, PID: 200})
+	if !ok {
+		t.Fatalf("expected apply event to find existing session")
+	}
+	if snapshot.Execution.ShellInChain || snapshot.Execution.DeepChain {
+		t.Fatalf("expected execution aggregate to be rebuilt without shell wrapper pollution")
+	}
+}

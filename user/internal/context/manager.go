@@ -13,6 +13,7 @@ type Manager struct {
 	mu               sync.Mutex
 	sessions         map[process.SessionID]*SessionState
 	contexts         map[process.SessionID]*ContextSnapshot
+	dirtyContexts    map[process.SessionID]struct{}
 	suppressedShells map[process.SessionID]map[uint32]struct{}
 	recentEventLimit int
 }
@@ -22,6 +23,7 @@ func NewManager() *Manager {
 	return &Manager{
 		sessions:         make(map[process.SessionID]*SessionState),
 		contexts:         make(map[process.SessionID]*ContextSnapshot),
+		dirtyContexts:    make(map[process.SessionID]struct{}),
 		suppressedShells: make(map[process.SessionID]map[uint32]struct{}),
 		recentEventLimit: CurrentHeuristics().RecentEventLimit,
 	}
@@ -78,7 +80,11 @@ func (m *Manager) ObserveIgnored(sessionID process.SessionID, e event.Event) boo
 		return false
 	}
 
-	return normalizeIgnoredEvent(m.suppressedShells, sessionID, session, e)
+	normalized := normalizeIgnoredEvent(m.suppressedShells, sessionID, session, e)
+	if normalized {
+		m.dirtyContexts[sessionID] = struct{}{}
+	}
+	return normalized
 }
 
 // ApplyEvent updates the in-memory derived aggregate for one session and returns a snapshot.
@@ -100,6 +106,10 @@ func (m *Manager) ApplyEvent(sessionID process.SessionID, e event.Event) (Contex
 	}
 
 	syncContextTimestamps(ctxState, session)
+	if _, dirty := m.dirtyContexts[sessionID]; dirty {
+		rebuildContextAggregates(ctxState, session)
+		delete(m.dirtyContexts, sessionID)
+	}
 
 	procState := session.Processes[e.PID]
 	switch e.Type {

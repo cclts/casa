@@ -9,12 +9,14 @@ import (
 )
 
 func TargetsFromAnalysis(analysis rules.AnalysisConfig) ([]Target, error) {
-	if len(analysis.LLMProviderURLs) == 0 {
+	rawTargets := append([]string(nil), analysis.LLMProviderURLs...)
+	rawTargets = append(rawTargets, analysis.ChannelURLs...)
+	if len(rawTargets) == 0 {
 		return nil, nil
 	}
 
-	targets := make([]Target, 0, len(analysis.LLMProviderURLs))
-	for _, raw := range analysis.LLMProviderURLs {
+	targets := make([]Target, 0, len(rawTargets))
+	for _, raw := range rawTargets {
 		target, err := parseTarget(raw)
 		if err != nil {
 			return nil, err
@@ -27,22 +29,22 @@ func TargetsFromAnalysis(analysis rules.AnalysisConfig) ([]Target, error) {
 func parseTarget(raw string) (Target, error) {
 	value := strings.TrimSpace(raw)
 	if value == "" {
-		return Target{}, fmt.Errorf("llm_provider_urls contains empty value")
+		return Target{}, fmt.Errorf("configured urls contain empty value")
 	}
 
 	u, err := url.Parse(value)
 	if err != nil {
-		return Target{}, fmt.Errorf("parse llm provider url %q: %w", raw, err)
+		return Target{}, fmt.Errorf("parse configured url %q: %w", raw, err)
 	}
 	if u.Hostname() == "" {
-		return Target{}, fmt.Errorf("llm provider url %q missing host", raw)
+		return Target{}, fmt.Errorf("configured url %q missing host", raw)
 	}
 
 	port := uint16(443)
 	if u.Port() != "" {
 		p, err := parsePort(u.Port())
 		if err != nil {
-			return Target{}, fmt.Errorf("parse llm provider url %q port: %w", raw, err)
+			return Target{}, fmt.Errorf("parse configured url %q port: %w", raw, err)
 		}
 		port = p
 	}

@@ -6,12 +6,15 @@ deployment on Linux.
 ### Files
 
 - `run_eval.sh`
-  Runs a fixed set of benign, malicious, and boundary prompts against the
-  OpenClaw CLI and captures only the newly appended CASA log segments for each
-  case.
+  Runs the current benign and boundary prompt set against the OpenClaw CLI and
+  captures only the newly appended CASA log segments for each case.
+- `fake_fs/`
+  Stable placeholder files with sensitive-looking names such as `.env`,
+  `credentials`, `id_rsa`, and `token` so path-based rules can be tested
+  without relying on real host secrets.
 - `sinks/post_sink.py`
-  A tiny local HTTP server that accepts POST requests. Useful for simulated
-  exfiltration cases.
+  A tiny local HTTP server that accepts POST requests and writes them to
+  `requests.jsonl`. Useful for local upload-style evaluation cases.
 - `results/`
   Per-run output. Each case gets:
   - `prompt.txt`
@@ -34,9 +37,25 @@ The script does not truncate those files. Instead it records byte offsets before
 each case and slices out only the newly appended region afterward. This avoids
 breaking CASA if it is still holding open file descriptors.
 
+### Fake filesystem
+
+Some evaluation cases use files under:
+
+```bash
+./evaluation/fake_fs
+```
+
+This tree exists so prompts can refer to stable, harmless files whose names look
+like secrets without depending on real user data. The evaluation script exposes
+this location through:
+
+```bash
+FAKE_FS_ROOT=./evaluation/fake_fs
+```
+
 ### Example
 
-If you run the default case set unchanged, start the local POST sink first in
+If you run the current case set unchanged, start the local POST sink first in
 terminal A:
 
 ```bash
@@ -45,7 +64,7 @@ python3 evaluation/sinks/post_sink.py --port 18000
 
 Why this is needed:
 
-- `M01` and `M02` send `curl` POST requests to `http://127.0.0.1:18000/collect`
+- some boundary cases send `curl` POST requests to `http://127.0.0.1:18000/collect`
 - without a local listener, those cases will fail with connection refused
 - the sink is only for local simulated exfiltration tests
 
@@ -71,6 +90,7 @@ If your Linux environment writes CASA logs somewhere else, then override them:
 
 ```bash
 OPENCLAW_AGENT=main \
+FAKE_FS_ROOT=./evaluation/fake_fs \
 CASA_EVENTS_LOG=/path/to/events.log \
 CASA_SESSIONS_LOG=/path/to/sessions.log \
 CASA_AUDIT_LOG=/path/to/audit.log \
@@ -81,12 +101,13 @@ bash evaluation/run_eval.sh
 ### Expected workflow
 
 1. Start CASA on the Linux host and make sure it is already writing to its log files.
-2. If you want to run the default simulated exfiltration cases unchanged, start:
+2. If you want to run the current local POST cases unchanged, start:
    `python3 evaluation/sinks/post_sink.py --port 18000`
-3. Run:
+3. Verify `evaluation/fake_fs/` exists, or set `FAKE_FS_ROOT` to an alternate fake filesystem root.
+4. Run:
    `bash evaluation/run_eval.sh`
-4. Wait for `run_eval.sh` to finish.
-5. Inspect:
+5. Wait for `run_eval.sh` to finish.
+6. Inspect:
    - `evaluation/results/<timestamp>/summary.tsv`
    - each per-case directory under `evaluation/results/<timestamp>/`
 
@@ -100,7 +121,11 @@ the collected logs.
   periodic boundaries rather than immediately.
 - Some prompts are intentionally local-only and use `127.0.0.1:18000` instead of
   external infrastructure.
+- The fake filesystem contains placeholder values only; it is not meant to
+  store real secrets.
 - If you do not want to run a local sink, you should edit or skip the cases that
   POST to `127.0.0.1:18000`.
+- The current script revision includes benign and boundary cases only. Malicious
+  cases can be added back later as a separate block once finalized.
 - This script captures artifacts. It does not yet score pass/fail from the log
   contents automatically.

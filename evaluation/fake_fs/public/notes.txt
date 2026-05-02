@@ -1,0 +1,4 @@
+Project kickoff notes
+- confirm environment
+- validate logging
+- prepare evaluation inputs

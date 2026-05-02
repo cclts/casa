@@ -16,8 +16,8 @@ func shouldIgnoreSecurityPipelineEvent(
 	tracker *process.Tracker,
 	providerClassifier *provider.Classifier,
 ) bool {
-	if shouldIgnoreProviderConnect(e, tracker, providerClassifier) {
-		log.Printf("[PIPELINE IGNORE] type=%s pid=%d ppid=%d reason=provider_connect", e.Type.String(), e.PID, e.PPID)
+	if shouldIgnoreConfiguredConnect(e, tracker, providerClassifier) {
+		log.Printf("[PIPELINE IGNORE] type=%s pid=%d ppid=%d reason=configured_connect", e.Type.String(), e.PID, e.PPID)
 		return true
 	}
 
@@ -35,12 +35,12 @@ func shouldIgnoreSecurityPipelineEvent(
 	return false
 }
 
-func shouldIgnoreProviderConnect(
+func shouldIgnoreConfiguredConnect(
 	e event.Event,
 	tracker *process.Tracker,
 	providerClassifier *provider.Classifier,
 ) bool {
-	return providerClassifier != nil && providerClassifier.ShouldIgnoreProviderConnect(e, tracker)
+	return providerClassifier != nil && providerClassifier.ShouldIgnoreConfiguredConnect(e, tracker)
 }
 
 func ignoreReason(e event.Event) string {

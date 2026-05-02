@@ -154,7 +154,14 @@ Top-level JSON shape:
 ```json
 {
   "analysis": {
-    "lineage_max_depth": 4
+    "lineage_max_depth": 4,
+    "llm_provider_urls": [
+      "https://generativelanguage.googleapis.com"
+    ],
+    "channel_urls": [
+      "https://api.telegram.org"
+    ],
+    "configured_connect_refresh_seconds": 300
   },
   "thresholds": {
     "log": 5,
@@ -192,7 +199,18 @@ analysis.network_tool_names
 analysis.interpreter_names
 analysis.container_runtime_names
 analysis.dangerous_capability_names
+analysis.llm_provider_urls
+analysis.channel_urls
+analysis.configured_connect_refresh_seconds
 ```
+
+### Configured Connect Ignore
+
+`analysis.llm_provider_urls` is for LLM API endpoints used by OpenClaw itself.
+
+`analysis.channel_urls` is for other non-security communication endpoints that should not affect CASA network-derived rules, such as Telegram.
+
+CASA resolves these URLs at startup and can refresh them periodically with `analysis.configured_connect_refresh_seconds`. Matching `CONNECT` events are ignored before they enter session context and decision scoring.
 
 ### Thresholds
 

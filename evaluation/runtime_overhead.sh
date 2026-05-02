@@ -32,13 +32,13 @@ What it measures:
   - task runtime
   - CASA CPU%
   - CASA RSS
-  - event-write latency approximation
+  - event-to-log-observation latency approximation
 
 Latency approximation:
   For each newly appended line in events.log, this script records the local
   observation time and subtracts the JSON event timestamp from it. This gives
-  an end-to-end approximation from kernel-normalized event time to completed
-  CASA event log write.
+  an end-to-end approximation from the kernel-derived event timestamp to the
+  moment an external observer can read the appended events.log line.
 
 Required:
   - CASA is already running
@@ -225,16 +225,14 @@ def summarize_metrics(path, target_case):
 
 def summarize_latency(path, target_case):
     latency = []
-    event_count = 0
     with open(path, newline="", encoding="utf-8") as f:
         reader = csv.reader(f, delimiter="\t")
         next(reader, None)
         for row in reader:
             if not row or row[0] != target_case:
                 continue
-            event_count += 1
             latency.append(float(row[6]))
-    return event_count, latency
+    return latency
 
 def avg(values):
     return sum(values) / len(values) if values else 0.0
@@ -247,7 +245,7 @@ def p95(values):
     return ordered[idx]
 
 cpu_values, rss_values = summarize_metrics(metrics_tsv, case_id)
-event_count, latency_values = summarize_latency(latency_tsv, case_id)
+latency_values = summarize_latency(latency_tsv, case_id)
 
 events_bytes = os.path.getsize(os.path.join(case_dir, "events.log"))
 sessions_bytes = os.path.getsize(os.path.join(case_dir, "sessions.log"))
@@ -266,7 +264,6 @@ print(
             f"{max(cpu_values) if cpu_values else 0.0:.2f}",
             f"{avg(rss_values):.0f}",
             f"{max(rss_values) if rss_values else 0.0:.0f}",
-            str(event_count),
             f"{avg(latency_values):.3f}",
             f"{p95(latency_values):.3f}",
             str(events_bytes),
@@ -359,7 +356,7 @@ PY
 
 printf 'case_id\tsample_time\tcpu_pct\trss_kb\n' > "$METRICS_TSV"
 printf 'case_id\tsession_id\tpid\ttype\tevent_timestamp\tobserved_ns\tlatency_ms\n' > "$LATENCY_TSV"
-printf 'case_id\tcategory\tname\ttask_runtime_s\texit_code\tavg_cpu_pct\tpeak_cpu_pct\tavg_rss_kb\tpeak_rss_kb\tevent_count\tavg_event_latency_ms\tp95_event_latency_ms\tevents_bytes\tsessions_bytes\taudit_bytes\talert_bytes\n' > "$SUMMARY_TSV"
+printf 'case_id\tcategory\tname\ttask_runtime_s\texit_code\tavg_cpu_pct\tpeak_cpu_pct\tavg_rss_kb\tpeak_rss_kb\tavg_event_latency_ms\tp95_event_latency_ms\tevents_bytes\tsessions_bytes\taudit_bytes\talert_bytes\n' > "$SUMMARY_TSV"
 
 run_case "light" "L01" "weather_fetch" \
 "Fetch weather from wttr.in and summarize it."
@@ -376,8 +373,8 @@ run_case "medium" "M02" "workspace_script" \
 run_case "heavy" "H01" "burst_exec" \
 "Run a short Python workload that launches at least eight quick subprocess commands in sequence, then summarize what happened."
 
-run_case "heavy" "H02" "burst_connect" \
-"Using bash or python, attempt TCP connections to 127.0.0.1 ports 22, 80, 443, 18000, and 9999 repeatedly and quickly as a local burst-connect workload."
+run_case "heavy" "H02" "connectivity_benchmark" \
+"Run a short connectivity benchmark with curl by issuing repeated HTTPS HEAD requests to https://example.com and https://example.org using short timeouts and no downloads, then summarize the status codes and timing."
 
 echo "Runtime overhead experiment completed."
 echo "Output directory: $OUT_DIR"
