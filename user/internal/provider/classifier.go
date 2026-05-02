@@ -1,6 +1,8 @@
 package provider
 
 import (
+	"log"
+
 	"github.com/cclts/casa/user/internal/event"
 	"github.com/cclts/casa/user/internal/process"
 )
@@ -23,13 +25,18 @@ func (c *Classifier) ShouldIgnoreProviderConnect(e event.Event, tracker *process
 
 	info, ok := tracker.GetInfo(e.PID)
 	if ok {
-		return info.Depth == 0
+		ignored := info.Depth == 0
+		log.Printf("[PROVIDER CONNECT] pid=%d ppid=%d addr=%s port=%d matched=true depth=%d ignored=%t", e.PID, e.PPID, e.Addr, e.Port, info.Depth, ignored)
+		return ignored
 	}
 
 	parent, ok := tracker.GetInfo(e.PPID)
 	if ok {
-		return parent.Depth == 0
+		ignored := parent.Depth == 0
+		log.Printf("[PROVIDER CONNECT] pid=%d ppid=%d addr=%s port=%d matched=true parent_depth=%d ignored=%t", e.PID, e.PPID, e.Addr, e.Port, parent.Depth, ignored)
+		return ignored
 	}
 
+	log.Printf("[PROVIDER CONNECT] pid=%d ppid=%d addr=%s port=%d matched=true ignored=false reason=no_tracker_info", e.PID, e.PPID, e.Addr, e.Port)
 	return false
 }

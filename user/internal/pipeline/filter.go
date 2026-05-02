@@ -66,11 +66,11 @@ func isTransparentRoutineExec(e event.Event) bool {
 	base := strings.ToLower(filepath.Base(strings.TrimSpace(e.Path)))
 	switch base {
 	case "uname":
-		return hasExactArgs(e.Args, "-a")
+		return matchesCommandArgs(e.Args, base, "-a")
 	case "whoami", "pwd", "id":
-		return len(e.Args) == 0
+		return matchesCommandArgs(e.Args, base)
 	case "ip":
-		return hasExactArgs(e.Args, "neigh", "show")
+		return matchesCommandArgs(e.Args, base, "neigh", "show")
 	default:
 		return false
 	}
@@ -136,4 +136,13 @@ func hasExactArgs(args []string, expected ...string) bool {
 		}
 	}
 	return true
+}
+
+func matchesCommandArgs(args []string, command string, tail ...string) bool {
+	if hasExactArgs(args, tail...) {
+		return true
+	}
+
+	withProgram := append([]string{command}, tail...)
+	return hasExactArgs(args, withProgram...)
 }

@@ -46,3 +46,14 @@ func TestShouldIngestIntoContextKeepsRegularOpens(t *testing.T) {
 		t.Fatalf("expected regular open to remain eligible for context ingestion")
 	}
 }
+
+func TestShouldIngestIntoContextFiltersTransparentRoutineExecWithProgramArgv(t *testing.T) {
+	evt := event.Event{
+		Type: event.EventExecve,
+		Path: "/usr/bin/ip",
+		Args: []string{"ip", "neigh", "show"},
+	}
+	if ShouldIngestIntoContext(evt) {
+		t.Fatalf("expected ip neigh show execve to be filtered as transparent routine exec")
+	}
+}
