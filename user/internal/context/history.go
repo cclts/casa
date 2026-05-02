@@ -58,26 +58,24 @@ func detectConnectThenExec(snapshot SessionSnapshot) bool {
 }
 
 func detectSensitiveThenNetwork(snapshot SessionSnapshot) bool {
-	var seenSensitive bool
-	var sensitiveAt time.Time
 	window := CurrentHeuristics().SensitiveHistoryWindow
+	var lastSensitiveAt time.Time
+	var lastConnectAt time.Time
 
 	for _, evt := range snapshot.RecentEvents {
 		switch evt.Type {
 		case event.EventOpenat:
-			if isSensitivePath(evt.Path) {
-				seenSensitive = true
-				sensitiveAt = evt.Time
-			}
-		case event.EventConnect:
-			if !seenSensitive {
+			if !isSensitivePath(evt.Path) {
 				continue
 			}
-			if window <= 0 || !evt.Time.Before(sensitiveAt) && evt.Time.Sub(sensitiveAt) <= window {
+			lastSensitiveAt = evt.Time
+			if withinHistoryWindow(lastConnectAt, lastSensitiveAt, window) {
 				return true
 			}
-			if window > 0 && evt.Time.Sub(sensitiveAt) > window {
-				seenSensitive = false
+		case event.EventConnect:
+			lastConnectAt = evt.Time
+			if withinHistoryWindow(lastSensitiveAt, lastConnectAt, window) {
+				return true
 			}
 		}
 	}
@@ -85,25 +83,43 @@ func detectSensitiveThenNetwork(snapshot SessionSnapshot) bool {
 }
 
 func detectSensitiveThenExecve(snapshot SessionSnapshot) bool {
-	var seenSensitive bool
-	var sensitiveAtUnix int64
-	windowSeconds := int64(CurrentHeuristics().SensitiveHistoryWindow.Seconds())
+	window := CurrentHeuristics().SensitiveHistoryWindow
+	var lastSensitiveAt time.Time
+	var lastExecAt time.Time
+
 	for _, evt := range snapshot.RecentEvents {
-		if evt.Type == event.EventOpenat && isSensitivePath(evt.Path) {
-			seenSensitive = true
-			sensitiveAtUnix = evt.Time.Unix()
-			continue
-		}
-		if seenSensitive && evt.Type == event.EventExecve {
-			if windowSeconds > 0 && evt.Time.Unix()-sensitiveAtUnix > windowSeconds {
-				seenSensitive = false
+		switch evt.Type {
+		case event.EventOpenat:
+			if !isSensitivePath(evt.Path) {
 				continue
 			}
-			return true
+			lastSensitiveAt = evt.Time
+			if withinHistoryWindow(lastExecAt, lastSensitiveAt, window) {
+				return true
+			}
+		case event.EventExecve:
+			lastExecAt = evt.Time
+			if withinHistoryWindow(lastSensitiveAt, lastExecAt, window) {
+				return true
+			}
 		}
 	}
 
 	return false
+}
+
+func withinHistoryWindow(a, b time.Time, window time.Duration) bool {
+	if a.IsZero() || b.IsZero() {
+		return false
+	}
+	diff := a.Sub(b)
+	if diff < 0 {
+		diff = -diff
+	}
+	if window <= 0 {
+		return true
+	}
+	return diff <= window
 }
 
 func detectBurstEvent(snapshot SessionSnapshot, eventType event.EventType, threshold int) bool {

@@ -135,7 +135,44 @@ func TestDetectSensitiveThenNetworkIsSessionScoped(t *testing.T) {
 	}
 }
 
-func TestDetectSensitiveThenExecveRespectsWindowAndOrder(t *testing.T) {
+func TestDetectSensitiveThenNetworkAllowsConnectBeforeSensitiveOpenWithinWindow(t *testing.T) {
+	original := CurrentHeuristics()
+	ConfigureHeuristics(Heuristics{
+		RecentEventLimit:       original.RecentEventLimit,
+		MaxPerProcessArtifacts: original.MaxPerProcessArtifacts,
+		DeepChainThreshold:     original.DeepChainThreshold,
+		BurstOpenThreshold:     original.BurstOpenThreshold,
+		BurstConnectThreshold:  original.BurstConnectThreshold,
+		BurstExecThreshold:     original.BurstExecThreshold,
+		BurstWindow:            original.BurstWindow,
+		SensitiveHistoryWindow: 2 * time.Second,
+		SuspiciousPathPatterns: original.SuspiciousPathPatterns,
+		SensitivePathPrefixes:  original.SensitivePathPrefixes,
+		SensitivePathPatterns:  original.SensitivePathPatterns,
+		ShellNames:             original.ShellNames,
+		NetworkToolNames:       original.NetworkToolNames,
+		InterpreterNames:       original.InterpreterNames,
+		ContainerRuntimeNames:  original.ContainerRuntimeNames,
+	})
+	defer ConfigureHeuristics(original)
+
+	now := time.Now()
+	if !detectSensitiveThenNetwork(SessionSnapshot{RecentEvents: []ObservedEvent{
+		{Type: event.EventConnect, Addr: "127.0.0.1", Port: 18000, Time: now},
+		{Type: event.EventOpenat, Path: "/etc/shadow", Time: now.Add(time.Second)},
+	}}) {
+		t.Fatalf("expected connect before sensitive open within window to trigger")
+	}
+
+	if detectSensitiveThenNetwork(SessionSnapshot{RecentEvents: []ObservedEvent{
+		{Type: event.EventConnect, Addr: "127.0.0.1", Port: 18000, Time: now},
+		{Type: event.EventOpenat, Path: "/etc/shadow", Time: now.Add(3 * time.Second)},
+	}}) {
+		t.Fatalf("expected connect before sensitive open outside window not to trigger")
+	}
+}
+
+func TestDetectSensitiveThenExecveRespectsWindowInBothDirections(t *testing.T) {
 	original := CurrentHeuristics()
 	ConfigureHeuristics(Heuristics{
 		RecentEventLimit:       original.RecentEventLimit,
@@ -163,11 +200,11 @@ func TestDetectSensitiveThenExecveRespectsWindowAndOrder(t *testing.T) {
 		t.Fatalf("expected sensitive open followed by exec within window to trigger")
 	}
 
-	if detectSensitiveThenExecve(SessionSnapshot{RecentEvents: []ObservedEvent{
+	if !detectSensitiveThenExecve(SessionSnapshot{RecentEvents: []ObservedEvent{
 		{Type: event.EventExecve, Path: "/bin/sh", Time: now},
 		{Type: event.EventOpenat, Path: "/etc/shadow", Time: now.Add(time.Second)},
 	}}) {
-		t.Fatalf("expected exec before sensitive open not to trigger")
+		t.Fatalf("expected exec before sensitive open within window to trigger")
 	}
 
 	if detectSensitiveThenExecve(SessionSnapshot{RecentEvents: []ObservedEvent{
@@ -175,6 +212,13 @@ func TestDetectSensitiveThenExecveRespectsWindowAndOrder(t *testing.T) {
 		{Type: event.EventExecve, Path: "/bin/sh", Time: now.Add(3 * time.Second)},
 	}}) {
 		t.Fatalf("expected exec outside sensitive history window not to trigger")
+	}
+
+	if detectSensitiveThenExecve(SessionSnapshot{RecentEvents: []ObservedEvent{
+		{Type: event.EventExecve, Path: "/bin/sh", Time: now},
+		{Type: event.EventOpenat, Path: "/etc/shadow", Time: now.Add(3 * time.Second)},
+	}}) {
+		t.Fatalf("expected exec before sensitive open outside window not to trigger")
 	}
 }
 
