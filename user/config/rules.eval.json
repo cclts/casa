@@ -23,7 +23,8 @@
       "/run/secrets/",
       "/var/lib/kubelet/",
       "/var/lib/docker/",
-      "/var/lib/containerd/"
+      "/var/lib/containerd/",
+      "/evaluation/fake_fs/"
     ],
     "sensitive_path_patterns": [
       "/etc/shadow",
@@ -83,8 +84,12 @@
     ],
     "channel_urls": [],
     "known_cidrs": [],
-    "allowed_loopback_ports": [],
-    "ignored_connect_ips": [],
+    "allowed_loopback_ports": [
+      18000
+    ],
+    "ignored_connect_ips": [
+      "149.154.166.110"
+    ],
     "configured_connect_refresh_seconds": 300
   },
   "thresholds": {

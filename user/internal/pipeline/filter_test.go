@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/cclts/casa/user/internal/event"
+	"github.com/cclts/casa/user/internal/rules"
 )
 
 func TestShouldIngestIntoContextFiltersRuntimeNoise(t *testing.T) {
@@ -29,6 +30,8 @@ func TestShouldIngestIntoContextFiltersIgnorableConnectNoise(t *testing.T) {
 		{Type: event.EventConnect, Addr: "142.250.26.95", Port: 0},
 		{Type: event.EventConnect, Addr: "", Port: 443},
 		{Type: event.EventConnect, Addr: "0.0.0.0"},
+		{Type: event.EventConnect, Addr: "127.0.0.53", Port: 53},
+		{Type: event.EventConnect, Addr: "127.0.0.1", Port: 11434},
 	}
 
 	for _, evt := range cases {
@@ -38,16 +41,32 @@ func TestShouldIngestIntoContextFiltersIgnorableConnectNoise(t *testing.T) {
 	}
 }
 
-func TestShouldIngestIntoContextKeepsLoopbackConnectsForLocalSinks(t *testing.T) {
+func TestShouldIngestIntoContextAllowsConfiguredLoopbackPorts(t *testing.T) {
+	ConfigureFilters(rules.AnalysisConfig{
+		AllowedLoopbackPorts: []uint16{18000},
+	})
+	defer ConfigureFilters(rules.AnalysisConfig{})
+
 	cases := []event.Event{
-		{Type: event.EventConnect, Addr: "127.0.0.53", Port: 53},
-		{Type: event.EventConnect, Addr: "127.0.0.1", Port: 11434},
+		{Type: event.EventConnect, Addr: "127.0.0.1", Port: 18000},
 	}
 
 	for _, evt := range cases {
 		if !ShouldIngestIntoContext(evt) {
-			t.Fatalf("expected loopback connect %+v to remain eligible for context ingestion", evt)
+			t.Fatalf("expected configured loopback connect %+v to remain eligible for context ingestion", evt)
 		}
+	}
+}
+
+func TestShouldIngestIntoContextFiltersConfiguredIgnoredConnectIPs(t *testing.T) {
+	ConfigureFilters(rules.AnalysisConfig{
+		IgnoredConnectIPs: []string{"149.154.166.110"},
+	})
+	defer ConfigureFilters(rules.AnalysisConfig{})
+
+	evt := event.Event{Type: event.EventConnect, Addr: "149.154.166.110", Port: 443}
+	if ShouldIngestIntoContext(evt) {
+		t.Fatalf("expected configured ignored connect ip to be filtered from context ingestion")
 	}
 }
 

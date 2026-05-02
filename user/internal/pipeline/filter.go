@@ -109,13 +109,27 @@ func isIgnorableConnectNoise(e event.Event) bool {
 		return false
 	}
 
+	policy := currentFilterPolicy()
 	addr := strings.TrimSpace(e.Addr)
 	if addr == "" || addr == "0.0.0.0" || e.Port == 0 {
 		return true
 	}
 
-	if _, err := netip.ParseAddr(addr); err != nil {
+	parsed, err := netip.ParseAddr(addr)
+	if err != nil {
 		return false
+	}
+	parsed = parsed.Unmap()
+
+	if _, ok := policy.IgnoredConnectIPs[parsed]; ok {
+		return true
+	}
+
+	if parsed.IsLoopback() {
+		if _, ok := policy.AllowedLoopbackPorts[e.Port]; ok {
+			return false
+		}
+		return true
 	}
 
 	return false

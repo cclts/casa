@@ -38,6 +38,8 @@ type AnalysisConfig struct {
 	LLMProviderURLs            []string `json:"llm_provider_urls,omitempty"`
 	ChannelURLs                []string `json:"channel_urls,omitempty"`
 	KnownCIDRs                 []string `json:"known_cidrs,omitempty"`
+	AllowedLoopbackPorts       []uint16 `json:"allowed_loopback_ports,omitempty"`
+	IgnoredConnectIPs          []string `json:"ignored_connect_ips,omitempty"`
 	ConfiguredConnectRefreshS  int      `json:"configured_connect_refresh_seconds,omitempty"`
 }
 

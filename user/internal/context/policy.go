@@ -38,7 +38,7 @@ var defaultHeuristics = Heuristics{
 	SensitiveHistoryWindow:   30 * time.Second,
 	SuspiciousPathPatterns:   []string{"/tmp/", "/var/tmp/", "/dev/shm/", "/run/user/", "/proc/self/fd/"},
 	SensitivePathPrefixes:    []string{"/etc/", "/root/", "/home/", "/proc/", "/sys/", "/var/run/secrets/", "/run/secrets/", "/var/lib/kubelet/", "/var/lib/docker/", "/var/lib/containerd/"},
-	SensitivePathPatterns:    []string{"/.ssh/", "/.gnupg/", "/.aws/", "/.azure/", "/.gcloud/", "/.kube/", "/.docker/", "/.config/", "/.npmrc", "/.pypirc", "/.netrc", "/id_rsa", "/id_ed25519", "/authorized_keys", "/known_hosts", "/credentials", "/credentials.json", "/token", "/secret", "/passwd", "/shadow", ".env"},
+	SensitivePathPatterns:    []string{"/.ssh/", "/.gnupg/", "/.aws/", "/.azure/", "/.gcloud/", "/.kube/", "/.docker/", "/.config/", "/.npmrc", "/.pypirc", "/.netrc", "/id_rsa", "/id_ed25519", "/authorized_keys", "/known_hosts", "/credentials", "/credentials.json", "/token", "/secret", "/shadow"},
 	ShellNames:               []string{"sh", "bash", "zsh", "dash", "ksh", "fish"},
 	NetworkToolNames:         []string{"curl", "wget", "nc", "netcat", "ncat", "socat", "ssh", "scp", "rsync"},
 	InterpreterNames:         []string{"python", "python3", "perl", "ruby", "node", "php", "lua", "bash", "sh", "dash", "zsh"},

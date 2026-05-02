@@ -54,6 +54,7 @@ func main() {
 
 	decisionEngine := decision.NewEngine(ruleEngine)
 	configureHeuristics(decisionEngine.AnalysisConfig())
+	pipeline.ConfigureFilters(decisionEngine.AnalysisConfig())
 	providerClassifier := configureConfiguredConnectClassifier(ctx, decisionEngine.AnalysisConfig())
 
 	stopReload := setupReload(decisionEngine, cfg.RulePath)
@@ -228,6 +229,7 @@ func setupReload(engine *decision.Engine, rulePath string) func() {
 			}
 
 			configureHeuristics(engine.AnalysisConfig())
+			pipeline.ConfigureFilters(engine.AnalysisConfig())
 
 			log.Printf("rule config reloaded from %s", rulePath)
 		}
