@@ -8,6 +8,7 @@ import (
 	"github.com/cclts/casa/user/internal/audit"
 	"github.com/cclts/casa/user/internal/context"
 	"github.com/cclts/casa/user/internal/decision"
+	"github.com/cclts/casa/user/internal/diag"
 	"github.com/cclts/casa/user/internal/event"
 	"github.com/cclts/casa/user/internal/process"
 	"github.com/cclts/casa/user/internal/provider"
@@ -102,6 +103,9 @@ func Run(ctx stdcontext.Context, events <-chan event.Event, decisionEngine *deci
 			// Audit/session output only happens after both the raw session snapshot
 			// and derived decision result are available for the same event.
 			if rawSession, rawOK := contextManager.SnapshotSessionByID(sess.ID); rawOK {
+				if diag.Enabled() {
+					diag.Logf("[PIPELINE DEBUG] session=%d pid=%d type=%s recent_tail=%v", rawSession.ID, e.PID, e.Type.String(), recentEventTail(rawSession.RecentEvents, 6))
+				}
 				result := decisionEngine.Evaluate(ctxSnapshot)
 				if err := auditMonitor.Record(e, &rawSession, &result); err != nil {
 					log.Printf("Audit: write_failed err=%v", err)
@@ -115,4 +119,28 @@ func Run(ctx stdcontext.Context, events <-chan event.Event, decisionEngine *deci
 			tracker.Remove(e.PID)
 		}
 	}
+}
+
+func recentEventTail(items []context.ObservedEvent, limit int) []string {
+	if len(items) == 0 {
+		return nil
+	}
+	if limit <= 0 || len(items) < limit {
+		limit = len(items)
+	}
+	items = items[len(items)-limit:]
+	out := make([]string, 0, len(items))
+	for _, evt := range items {
+		switch evt.Type {
+		case event.EventOpenat:
+			out = append(out, evt.Type.String()+":"+evt.Path)
+		case event.EventConnect:
+			out = append(out, evt.Type.String()+":"+evt.Addr)
+		case event.EventExecve:
+			out = append(out, evt.Type.String()+":"+evt.Path)
+		default:
+			out = append(out, evt.Type.String())
+		}
+	}
+	return out
 }

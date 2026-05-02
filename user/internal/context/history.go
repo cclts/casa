@@ -5,12 +5,13 @@ import (
 	"strings"
 	"time"
 
+	"github.com/cclts/casa/user/internal/diag"
 	"github.com/cclts/casa/user/internal/event"
 )
 
 // BuildHistoricalContext summarizes the recent syscall history observed for the whole session.
 func BuildHistoricalContext(snapshot SessionSnapshot) HistoricalContext {
-	return HistoricalContext{
+	history := HistoricalContext{
 		ConnectThenExec:       detectConnectThenExec(snapshot),
 		SensitiveThenNetwork:  detectSensitiveThenNetwork(snapshot),
 		SensitiveThenExecve:   detectSensitiveThenExecve(snapshot),
@@ -20,6 +21,21 @@ func BuildHistoricalContext(snapshot SessionSnapshot) HistoricalContext {
 		WriteThenExecSamePath: detectWriteThenExecSamePath(snapshot),
 		OpenedDeletedPath:     detectOpenedDeletedPath(snapshot),
 	}
+	if diag.Enabled() {
+		diag.Logf("[HISTORY DEBUG] session=%d events=%d connect_then_exec=%t sensitive_then_network=%t sensitive_then_execve=%t burst_open=%t burst_connect=%t burst_exec=%t write_then_exec_same_path=%t opened_deleted_path=%t",
+			snapshot.ID,
+			len(snapshot.RecentEvents),
+			history.ConnectThenExec,
+			history.SensitiveThenNetwork,
+			history.SensitiveThenExecve,
+			history.BurstOpen,
+			history.BurstConnect,
+			history.BurstExec,
+			history.WriteThenExecSamePath,
+			history.OpenedDeletedPath,
+		)
+	}
+	return history
 }
 
 func detectWriteThenExecSamePath(snapshot SessionSnapshot) bool {
@@ -69,12 +85,26 @@ func detectSensitiveThenNetwork(snapshot SessionSnapshot) bool {
 				continue
 			}
 			lastSensitiveAt = evt.Time
+			diag.Logf("[HISTORY DEBUG] session=%d sensitive_open path=%s ts=%s", snapshot.ID, evt.Path, evt.Time.Format(time.RFC3339Nano))
 			if withinHistoryWindow(lastConnectAt, lastSensitiveAt, window) {
+				diag.Logf("[HISTORY DEBUG] session=%d sensitive_then_network matched direction=connect_before_open connect_ts=%s open_ts=%s window=%s",
+					snapshot.ID,
+					lastConnectAt.Format(time.RFC3339Nano),
+					lastSensitiveAt.Format(time.RFC3339Nano),
+					window,
+				)
 				return true
 			}
 		case event.EventConnect:
 			lastConnectAt = evt.Time
+			diag.Logf("[HISTORY DEBUG] session=%d connect addr=%s port=%d ts=%s", snapshot.ID, evt.Addr, evt.Port, evt.Time.Format(time.RFC3339Nano))
 			if withinHistoryWindow(lastSensitiveAt, lastConnectAt, window) {
+				diag.Logf("[HISTORY DEBUG] session=%d sensitive_then_network matched direction=open_before_connect open_ts=%s connect_ts=%s window=%s",
+					snapshot.ID,
+					lastSensitiveAt.Format(time.RFC3339Nano),
+					lastConnectAt.Format(time.RFC3339Nano),
+					window,
+				)
 				return true
 			}
 		}
@@ -94,12 +124,26 @@ func detectSensitiveThenExecve(snapshot SessionSnapshot) bool {
 				continue
 			}
 			lastSensitiveAt = evt.Time
+			diag.Logf("[HISTORY DEBUG] session=%d sensitive_open path=%s ts=%s", snapshot.ID, evt.Path, evt.Time.Format(time.RFC3339Nano))
 			if withinHistoryWindow(lastExecAt, lastSensitiveAt, window) {
+				diag.Logf("[HISTORY DEBUG] session=%d sensitive_then_execve matched direction=exec_before_open exec_ts=%s open_ts=%s window=%s",
+					snapshot.ID,
+					lastExecAt.Format(time.RFC3339Nano),
+					lastSensitiveAt.Format(time.RFC3339Nano),
+					window,
+				)
 				return true
 			}
 		case event.EventExecve:
 			lastExecAt = evt.Time
+			diag.Logf("[HISTORY DEBUG] session=%d exec path=%s ts=%s", snapshot.ID, evt.Path, evt.Time.Format(time.RFC3339Nano))
 			if withinHistoryWindow(lastSensitiveAt, lastExecAt, window) {
+				diag.Logf("[HISTORY DEBUG] session=%d sensitive_then_execve matched direction=open_before_exec open_ts=%s exec_ts=%s window=%s",
+					snapshot.ID,
+					lastSensitiveAt.Format(time.RFC3339Nano),
+					lastExecAt.Format(time.RFC3339Nano),
+					window,
+				)
 				return true
 			}
 		}
