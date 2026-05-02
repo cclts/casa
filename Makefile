@@ -1,6 +1,7 @@
 CLANG ?= clang
 BPFTOOL ?= bpftool
 GO ?= go
+PRESERVE_ENV := CASA_RULES_PATH,CASA_EVENTS_LOG_PATH,CASA_SESSIONS_LOG_PATH,CASA_AUDIT_LOG_PATH,CASA_ALERT_LOG_PATH,CASA_BPF_PATH,CASA_PID_PATH
 
 UNAME_M := $(shell uname -m)
 
@@ -62,7 +63,7 @@ build:
 
 run: all
 	@echo "[+] Running application ..."
-	sudo ./$(GO_APP)
+	sudo --preserve-env=$(PRESERVE_ENV) ./$(GO_APP)
 
 clean:
 	@echo "[+] Cleaning build artifacts"
