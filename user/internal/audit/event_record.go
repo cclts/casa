@@ -2,16 +2,14 @@ package audit
 
 import "github.com/cclts/casa/user/internal/event"
 
-func buildEventLogRecord(e event.Event, sessionID uint32, depth int) EventLogRecord {
+func buildEventLogRecord(e event.Event) EventLogRecord {
 	record := EventLogRecord{
 		Timestamp: e.TimeHuman,
-		SessionID: sessionID,
 		PID:       e.PID,
 		PPID:      e.PPID,
 		UID:       e.UID,
 		Type:      e.Type.String(),
 		Comm:      e.Comm,
-		Depth:     depth,
 	}
 	populateEventLogFields(&record, e)
 	return record

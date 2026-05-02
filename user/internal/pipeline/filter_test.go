@@ -8,6 +8,7 @@ import (
 
 func TestShouldIngestIntoContextFiltersRuntimeNoise(t *testing.T) {
 	cases := []event.Event{
+		{Type: event.EventOpenat, Path: ""},
 		{Type: event.EventOpenat, Path: "/proc/self/status"},
 		{Type: event.EventOpenat, Path: "/home/ubuntu/.nvm/versions/node/v24.14.1/lib/node_modules/openclaw/package.json"},
 		{Type: event.EventOpenat, Path: "/home/ubuntu/.nvm/versions/node/v24.14.1/bin/node"},
@@ -25,6 +26,8 @@ func TestShouldIngestIntoContextFiltersRuntimeNoise(t *testing.T) {
 
 func TestShouldIngestIntoContextFiltersIgnorableConnectNoise(t *testing.T) {
 	cases := []event.Event{
+		{Type: event.EventConnect, Addr: "142.250.26.95", Port: 0},
+		{Type: event.EventConnect, Addr: "", Port: 443},
 		{Type: event.EventConnect, Addr: "0.0.0.0"},
 		{Type: event.EventConnect, Addr: "127.0.0.53", Port: 53},
 		{Type: event.EventConnect, Addr: "127.0.0.1", Port: 11434},

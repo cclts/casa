@@ -22,18 +22,10 @@ type Monitor struct {
 	alertFile   *os.File
 	sessions    map[uint32]*sessionAggregate
 	rawSessions map[uint32]context.SessionSnapshot
-	pending     map[eventKey]event.Event
 	done        chan struct{}
 	stopFlush   chan struct{}
 	writerErr   error
 	closed      bool
-}
-
-type eventKey struct {
-	Type    event.EventType
-	PID     uint32
-	TID     uint32
-	KTimeNS uint64
 }
 
 // NewMonitor opens append-only events.log, sessions.log, audit.log, and alert.log files.
@@ -84,7 +76,6 @@ func NewMonitor(eventPath, sessionPath, logPath, alertPath string) (*Monitor, er
 		alertFile:   alertFile,
 		sessions:    make(map[uint32]*sessionAggregate),
 		rawSessions: make(map[uint32]context.SessionSnapshot),
-		pending:     make(map[eventKey]event.Event),
 		done:        make(chan struct{}),
 		stopFlush:   make(chan struct{}),
 	}
@@ -181,9 +172,10 @@ func (m *Monitor) Close() error {
 	return firstErr
 }
 
-// RecordEvent registers an observed event so it can be written to events.log
-// once the pipeline finishes deriving session/context metadata for it.
-func (m *Monitor) RecordEvent(e event.Event) error {
+// Record always writes one tree-scoped event log entry. When raw and result are
+// present, it also writes thresholded audit/alert records and refreshes the
+// current session snapshot state used by lifecycle flushes.
+func (m *Monitor) Record(e event.Event, raw *context.SessionSnapshot, result *decision.Result) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -194,48 +186,27 @@ func (m *Monitor) RecordEvent(e event.Event) error {
 		return errors.New("audit monitor is closed")
 	}
 
-	m.pending[eventKeyFromEvent(e)] = e
-	return nil
-}
-
-// DiscardEvent drops a staged event when no full Record call will follow.
-func (m *Monitor) DiscardEvent(e event.Event) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	delete(m.pending, eventKeyFromEvent(e))
-}
-
-// Record writes thresholded audit logs. It also flushes
-// the corresponding events.log record now that session/context metadata exists.
-func (m *Monitor) Record(e event.Event, raw context.SessionSnapshot, depth int, result decision.Result) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	if m.writerErr != nil {
-		return m.writerErr
-	}
-	if m.closed {
-		return errors.New("audit monitor is closed")
-	}
-
-	if err := m.writePendingEventLocked(e, raw.ID, depth); err != nil {
+	if err := writeJSONL(m.eventFile, buildEventLogRecord(e), "event log"); err != nil {
 		m.writerErr = err
 		return err
 	}
 
+	if raw == nil || result == nil {
+		return nil
+	}
+
 	session := m.getOrCreateSessionLocked(raw.ID, e.Time)
-	m.rawSessions[raw.ID] = raw
+	m.rawSessions[raw.ID] = *raw
 
 	if len(result.Triggered) > 0 && result.Score >= result.LogThreshold {
-		if err := m.writeFullRecordLocked(m.auditFile, "audit log", session, e, result); err != nil {
+		if err := m.writeFullRecordLocked(m.auditFile, "audit log", session, e, *result); err != nil {
 			m.writerErr = err
 			return err
 		}
 	}
 
 	if len(result.Triggered) > 0 && result.CrossesAlertThreshold() {
-		if err := m.writeFullRecordLocked(m.alertFile, "alert log", session, e, result); err != nil {
+		if err := m.writeFullRecordLocked(m.alertFile, "alert log", session, e, *result); err != nil {
 			m.writerErr = err
 			return err
 		}
@@ -268,19 +239,6 @@ func (m *Monitor) RecordSessionSnapshot(raw context.SessionSnapshot, reason stri
 	}
 
 	return nil
-}
-
-func (m *Monitor) writePendingEventLocked(e event.Event, sessionID uint32, depth int) error {
-	key := eventKeyFromEvent(e)
-	raw, ok := m.pending[key]
-	if ok {
-		delete(m.pending, key)
-	} else {
-		raw = e
-	}
-
-	eventRecord := buildEventLogRecord(raw, sessionID, depth)
-	return writeJSONL(m.eventFile, eventRecord, "event log")
 }
 
 func (m *Monitor) flushSessionsLocked(reason string, clear bool) {
@@ -334,13 +292,4 @@ func (m *Monitor) getOrCreateSessionLocked(sessionID uint32, createdAt time.Time
 	}
 	m.sessions[sessionID] = session
 	return session
-}
-
-func eventKeyFromEvent(e event.Event) eventKey {
-	return eventKey{
-		Type:    e.Type,
-		PID:     e.PID,
-		TID:     e.TID,
-		KTimeNS: e.KTimeNS,
-	}
 }

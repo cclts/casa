@@ -5,7 +5,6 @@ import "github.com/cclts/casa/user/internal/decision"
 // EventLogRecord is the JSONL payload written for every observed event.
 type EventLogRecord struct {
 	Timestamp string    `json:"timestamp"`
-	SessionID uint32    `json:"session_id"`
 	PID       uint32    `json:"pid"`
 	PPID      uint32    `json:"ppid"`
 	UID       uint32    `json:"uid"`
@@ -17,7 +16,6 @@ type EventLogRecord struct {
 	Mode      *uint32   `json:"mode,omitempty"`
 	Addr      *string   `json:"addr,omitempty"`
 	Port      *uint16   `json:"port,omitempty"`
-	Depth     int       `json:"depth"`
 }
 
 // SessionLogRecord is the JSONL payload written for session-level snapshots.

@@ -9,10 +9,22 @@ import (
 )
 
 func ShouldIngestIntoContext(e event.Event) bool {
-	return !isRuntimeLoaderNoise(e) &&
+	return !isMissingStructuredFields(e) &&
+		!isRuntimeLoaderNoise(e) &&
 		!isRoutineSessionFileNoise(e) &&
 		!isTransparentRoutineExec(e) &&
 		!isIgnorableConnectNoise(e)
+}
+
+func isMissingStructuredFields(e event.Event) bool {
+	switch e.Type {
+	case event.EventOpenat:
+		return strings.TrimSpace(e.Path) == ""
+	case event.EventConnect:
+		return strings.TrimSpace(e.Addr) == "" || e.Port == 0
+	default:
+		return false
+	}
 }
 
 func isRuntimeLoaderNoise(e event.Event) bool {
@@ -98,7 +110,7 @@ func isIgnorableConnectNoise(e event.Event) bool {
 	}
 
 	addr := strings.TrimSpace(e.Addr)
-	if addr == "" || addr == "0.0.0.0" {
+	if addr == "" || addr == "0.0.0.0" || e.Port == 0 {
 		return true
 	}
 
