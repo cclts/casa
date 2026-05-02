@@ -4,6 +4,7 @@ import (
 	stdcontext "context"
 	"fmt"
 	"log"
+	"net"
 	"os"
 	"os/signal"
 	"sync"
@@ -16,6 +17,7 @@ import (
 	"github.com/cclts/casa/user/internal/ebpf"
 	"github.com/cclts/casa/user/internal/event"
 	"github.com/cclts/casa/user/internal/pipeline"
+	"github.com/cclts/casa/user/internal/provider"
 	"github.com/cclts/casa/user/internal/rules"
 )
 
@@ -52,6 +54,7 @@ func main() {
 
 	decisionEngine := decision.NewEngine(ruleEngine)
 	configureHeuristics(decisionEngine.AnalysisConfig())
+	providerClassifier := configureProviderClassifier(decisionEngine.AnalysisConfig())
 
 	stopReload := setupReload(decisionEngine, cfg.RulePath)
 	defer stopReload()
@@ -111,7 +114,7 @@ func main() {
 	pipelineDone := make(chan struct{})
 	go func() {
 		defer close(pipelineDone)
-		pipeline.Run(ctx, events, decisionEngine, auditMonitor)
+		pipeline.Run(ctx, events, decisionEngine, auditMonitor, providerClassifier)
 	}()
 
 	log.Println("CASA pipeline is running")
@@ -163,6 +166,24 @@ func configureHeuristics(analysis rules.AnalysisConfig) {
 		ContainerRuntimeNames:    analysis.ContainerRuntimeNames,
 		DangerousCapabilityNames: analysis.DangerousCapabilityNames,
 	})
+}
+
+func configureProviderClassifier(analysis rules.AnalysisConfig) *provider.Classifier {
+	targets, err := provider.TargetsFromAnalysis(analysis)
+	if err != nil {
+		log.Printf("provider config invalid: %v", err)
+		return nil
+	}
+	if len(targets) == 0 {
+		return nil
+	}
+
+	endpoints, err := provider.ResolveTargets(stdcontext.Background(), net.DefaultResolver, targets)
+	if err != nil {
+		log.Printf("provider resolve failed: %v", err)
+		return nil
+	}
+	return provider.NewClassifier(endpoints)
 }
 
 func getenv(key, fallback string) string {

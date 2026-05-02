@@ -1,44 +1,156 @@
-1. build
+# CASA
+
+CASA monitors the `openclaw-gateway` process tree, derives session-level context from observed events, and evaluates weighted CEL rules to produce `audit.log` and `alert.log`.
+
+## Validated Environment
+
+This project is sensitive to runtime version changes, especially OpenClaw itself.
+
+### 1. OpenClaw Version
+
+This is the most important compatibility point.
+
+CASA currently depends on OpenClaw runtime behavior for:
+
+- CLI session boundary detection
+- `openclaw-gateway` process-tree tracking
+- expected child-process patterns
+- routine-noise filtering
+
+Validated baseline:
+
+```text
+OpenClaw 2026.3.24 (cff6dc9)
+```
+
+### 2. Kernel + eBPF Toolchain
+
+This is the second most important compatibility point.
+
+Validated baseline:
+
+```text
+Kernel: 6.17.0-20-generic
+Architecture: aarch64
+bpftool: v7.7.0
+libbpf: v1.7
+clang: 20.1.8
+llc: 20.1.8
+bpffs: /sys/fs/bpf mounted
+kernel.unprivileged_bpf_disabled = 2
+Environment: Ubuntu VM on VMware Fusion
+```
+
+### 3. Runtime Versions
+
+Validated baseline:
+
+```text
+Node: v24.14.1
+Go: go1.24.0 linux/arm64
+```
+
+## Build and Run
+
+### Prerequisites
+
+Before running CASA evaluation on Linux, make sure:
+
+- OpenClaw is already installed
+- OpenClaw onboarding is already completed
+- a working LLM provider and API key are already configured for OpenClaw
+
+`setup.sh` only prepares CASA build dependencies. It does not install or configure OpenClaw for you.
+
+Example:
+
+```bash
+openclaw --version
+openclaw onboard --install-daemon
+```
+
+Without a configured provider/API key, OpenClaw CLI prompts may fail and evaluation results will not be meaningful.
+
+### Setup
+
+```bash
+./setup.sh
+```
+
+After `setup.sh`, verify:
+
+```bash
+go version
+openclaw --version
+```
+
+### Build
+
 ```bash
 make
 ```
 
-2. run
+### Run
+
 ```bash
 make run 2>&1 | stdbuf -oL tee trace.log
 ```
 
-3. show dir
-```bash
-tree -I "*.o"
-```
+### Reload Rules
 
-4. rules
+CASA writes its pid file to `CASA_PID_PATH` and supports rule reload with `SIGHUP`.
 
-default rule file:
-```text
-user/config/rules.json
-```
-
-override path:
-```bash
-CASA_RULES_PATH=/path/to/rules.json make run
-```
-
-reload rules after editing:
 ```bash
 kill -HUP $(cat /var/run/casa.pid)
 ```
 
-rules are evaluated in 3 layers:
+## Derived Context
+
+Rules evaluate against three context groups.
+
+### Execution
+
 ```text
-raw state -> derived context -> CEL rules
+execution.suspicious_path_exec
+execution.deep_chain
+execution.shell_in_chain
+execution.network_tool_in_chain
+execution.interpreter_in_chain
+execution.container_runtime_in_chain
+execution.memfd_or_deleted_exec
 ```
 
-the rule engine only sees derived context.
-`process/` and `context/` build that context first, then `decision/` passes a CEL-friendly object into `rules/`.
+### Capability
 
-top-level JSON shape:
+```text
+capability.has_dangerous_caps
+capability.dangerous_count
+capability.seccomp_disabled
+```
+
+### History
+
+```text
+history.connect_then_exec
+history.sensitive_then_network
+history.sensitive_then_execve
+history.burst_open
+history.burst_connect
+history.burst_exec
+history.write_then_exec_same_path
+history.opened_deleted_path
+```
+
+## Rule Configuration
+
+Default rule file:
+
+```text
+user/config/rules.json
+```
+
+Top-level JSON shape:
+
 ```json
 {
   "analysis": {
@@ -60,37 +172,46 @@ top-level JSON shape:
 }
 ```
 
-fields:
+### Analysis Fields
+
 ```text
 analysis.lineage_max_depth
-  used by the process/session lineage walker
-
+analysis.recent_event_limit
+analysis.max_per_process_artifacts
+analysis.deep_chain_threshold
+analysis.burst_open_threshold
+analysis.burst_connect_threshold
+analysis.burst_exec_threshold
+analysis.burst_window_seconds
+analysis.sensitive_history_window_seconds
+analysis.suspicious_path_patterns
+analysis.sensitive_path_prefixes
+analysis.sensitive_path_patterns
+analysis.shell_names
+analysis.network_tool_names
+analysis.interpreter_names
+analysis.container_runtime_names
 analysis.dangerous_capability_names
-  selects which Linux capabilities contribute to capability.has_dangerous_caps / capability.dangerous_count
-
-thresholds.log
-  score >= this becomes LOG
-
-thresholds.alert
-  score >= this becomes ALERT
-
-rules[].name
-  stable rule identifier shown in audit output
-
-rules[].description
-  human-readable explanation
-
-rules[].expr
-  CEL boolean expression
-
-rules[].weight
-  score added when expr evaluates to true
-
-rules[].enabled
-  whether the rule is active
 ```
 
-the CEL input object currently looks like this:
+### Thresholds
+
+```text
+thresholds.log
+thresholds.alert
+```
+
+### Rule Fields
+
+```text
+rules[].name
+rules[].description
+rules[].expr
+rules[].weight
+rules[].enabled
+```
+
+## CEL Input Shape
 
 ```json
 {
@@ -122,115 +243,86 @@ the CEL input object currently looks like this:
 }
 ```
 
-available derived context:
+## Rule Semantics
 
-execution:
-```text
-execution.suspicious_path_exec
-execution.deep_chain
-execution.shell_in_chain
-execution.network_tool_in_chain
-execution.interpreter_in_chain
-execution.container_runtime_in_chain
-execution.memfd_or_deleted_exec
-```
+- each enabled rule is compiled at reload time
+- rules evaluate against derived context, not raw events directly
+- each rule can trigger at most once per session
+- score accumulates across the session
+- only newly triggered rules add new score
+- only newly triggered rules appear in `audit.log` and `alert.log`
 
-capability:
-```text
-capability.has_dangerous_caps
-capability.dangerous_count
-capability.seccomp_disabled
-```
 
-history:
-```text
-history.connect_then_exec
-history.sensitive_then_network
-history.sensitive_then_execve
-history.burst_open
-history.burst_connect
-history.burst_exec
-history.write_then_exec_same_path
-history.opened_deleted_path
-```
+## Environment Variables
 
-CEL examples:
-```json
-{
-  "name": "shell_download_execute",
-  "description": "Shell chain with connect then exec",
-  "expr": "history.connect_then_exec && execution.shell_in_chain",
-  "weight": 4,
-  "enabled": true
-}
-```
+### Log and Rule Paths
 
-```json
-{
-  "name": "dangerous_caps_no_seccomp",
-  "description": "Process has dangerous capabilities and seccomp is disabled",
-  "expr": "capability.has_dangerous_caps && capability.seccomp_disabled",
-  "weight": 5,
-  "enabled": true
-}
-```
-
-```json
-{
-  "name": "burst_network_from_deep_chain",
-  "description": "Deep execution chain followed by bursty network activity",
-  "expr": "execution.deep_chain && history.burst_connect",
-  "weight": 3,
-  "enabled": true
-}
-```
-
-```json
-{
-  "name": "file_drop_and_exec",
-  "description": "Process wrote and then executed the same path",
-  "expr": "history.write_then_exec_same_path",
-  "weight": 6,
-  "enabled": true
-}
-```
-
-legacy compatibility:
-```text
-the loader still accepts old feature/match/min_value rules and converts them to expr internally.
-new rules should use expr directly.
-```
-
-rule behavior:
-```text
-each enabled rule is compiled at reload time
-each event context is evaluated against every enabled CEL program
-matching rules add their weight to the total score
-triggered rule names and expressions are written into audit output
-```
-
-5. audit logs
-
-default output files:
-```text
-user/logs/audit.log
-user/logs/alert.log
-```
-
-override paths:
 ```bash
-CASA_AUDIT_LOG_PATH=/path/to/audit.log \
-CASA_ALERT_LOG_PATH=/path/to/alert.log \
+CASA_EVENTS_LOG_PATH     # default: user/logs/events.log
+CASA_EVENTS_LOG          # alias for CASA_EVENTS_LOG_PATH
+
+CASA_SESSIONS_LOG_PATH   # default: user/logs/sessions.log
+CASA_SESSIONS_LOG        # alias for CASA_SESSIONS_LOG_PATH
+
+CASA_AUDIT_LOG_PATH      # default: user/logs/audit.log
+CASA_ALERT_LOG_PATH      # default: user/logs/alert.log
+
+CASA_RULES_PATH          # default: user/config/rules.json
+```
+
+### Runtime Paths
+
+```bash
+CASA_BPF_PATH            # default: ebpf/build/probes.o
+CASA_PID_PATH            # default: /var/run/casa.pid
+```
+
+### Example
+
+```bash
+CASA_RULES_PATH=/path/to/rules.json \
+CASA_EVENTS_LOG_PATH=/tmp/events.log \
+CASA_SESSIONS_LOG_PATH=/tmp/sessions.log \
+CASA_AUDIT_LOG_PATH=/tmp/audit.log \
+CASA_ALERT_LOG_PATH=/tmp/alert.log \
 make run
 ```
 
-format:
+## Pipeline Model
+
+High-level flow:
+
 ```text
-JSONL (one JSON object per line)
+eBPF events
+  -> process-tree tracking
+  -> CLI session tracking
+  -> derived context
+  -> CEL rules
+  -> logs
 ```
 
-behavior:
-```text
-LOG and ALERT events go to audit.log
-ALERT events also go to alert.log
-```
+CASA distinguishes three scopes:
+
+- `events.log`: events inside the tracked `openclaw-gateway` tree
+- `session`: one OpenClaw CLI invocation window
+- `context`: derived session-level features used by rules
+
+## Logs
+
+1. `events.log`
+  - contains events from the tracked `openclaw-gateway` tree
+  - does not carry `session_id`
+  - does not carry decision output
+2. `sessions.log`
+  - lifecycle-oriented session snapshots
+  - does not carry decision output
+  - current reasons:
+    - `periodic_flush`
+    - `session_closed`
+    - `shutdown`
+3. `audit.log`
+  - contains the triggering event and decision payload
+  - written when total score reaches `thresholds.log`
+4. `alert.log`
+  - same structure as `audit.log`
+  - written when total score reaches `thresholds.alert`

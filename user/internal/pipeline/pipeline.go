@@ -10,6 +10,7 @@ import (
 	"github.com/cclts/casa/user/internal/decision"
 	"github.com/cclts/casa/user/internal/event"
 	"github.com/cclts/casa/user/internal/process"
+	"github.com/cclts/casa/user/internal/provider"
 )
 
 // Run is the main user-space analysis loop.
@@ -17,13 +18,12 @@ import (
 // Order matters here:
 //  1. update only the minimal tracker/session lifecycle state
 //  2. first gate: drop anything outside the tracked OpenClaw tree
-//  3. write tree-scoped events.log records
-//  4. only after that, do heavier enrichment such as security reads and
-//     exec lineage reconstruction
-//  5. keep only events that occur while a CLI session window is active
-//  6. fold accepted events into raw session state, derive session context, and
-//     emit audit/session records
-func Run(ctx stdcontext.Context, events <-chan event.Event, decisionEngine *decision.Engine, auditMonitor *audit.Monitor) {
+//  3. second gate: require an active CLI session window
+//  4. third gate: drop known-noisy events that should not enter the security pipeline
+//  5. only then do heavier enrichment such as security reads and exec lineage
+//  6. fold accepted events into raw session state
+//  7. derive session context, evaluate rules, and emit logs
+func Run(ctx stdcontext.Context, events <-chan event.Event, decisionEngine *decision.Engine, auditMonitor *audit.Monitor, providerClassifier *provider.Classifier) {
 	tracker := process.NewTracker()
 	sessionTracker := process.NewSessionTracker()
 	securityStore := process.NewSecurityStore()
@@ -66,48 +66,51 @@ func Run(ctx stdcontext.Context, events <-chan event.Event, decisionEngine *deci
 			continue
 		}
 
-		var (
-			rawSession *context.SessionSnapshot
-			result     *decision.Result
-		)
+		// Second gate: the event is already inside the tracked tree. The remaining
+		// question is whether a CLI session window is active at this timestamp.
+		sess, ok := sessionTracker.ActiveSession(e.Time)
+		if !ok {
+			if e.Type == event.EventExit {
+				tracker.Remove(e.PID)
+			}
+			continue
+		}
 
-		// Heavier per-pid enrichment only happens after the tree-membership gate.
-		// Today only execve needs these extra reads.
+		// Third gate: known-noisy patterns are excluded before any heavier
+		// per-pid enrichment so they do not enter raw session state or derived
+		// security context.
+		if shouldIgnoreSecurityPipelineEvent(e, sess.ID, contextManager, tracker, providerClassifier) {
+			if e.Type == event.EventExit {
+				tracker.Remove(e.PID)
+			}
+			continue
+		}
+
+		// Heavier per-pid enrichment only happens for events that survive the
+		// tree, session, and ignore gates. Today only execve needs these reads.
 		var lineage process.Lineage
 		if e.Type == event.EventExecve {
 			securityStore.Ensure(e.PID)
 			lineage = process.BuildLineage(e.PID, tracker, decisionEngine.LineageMaxDepth())
 		}
 
-		// SessionTracker only maintains the current CLI session window. Once the
-		// event passed the tree-membership gate, the remaining question is whether
-		// that session window is still active at this event timestamp.
-		sess, ok := sessionTracker.ActiveSession(e.Time)
-		if ok {
-			// Some known-noisy patterns still stay in events.log, but should not
-			// mutate session raw state or derived context.
-			if e.Type != event.EventExit && !ShouldIngestIntoContext(e) {
-				contextManager.ObserveIgnored(sess.ID, e)
-			} else if e.Type == event.EventExit && contextManager.ObserveIgnored(sess.ID, e) {
-				// EXIT can still be used to clean up ignored routine wrappers.
-			} else {
-				contextManager.Observe(sess.ID, lineage, securityStore, e)
-				ctxSnapshot, ctxOK := contextManager.ApplyEvent(sess.ID, e)
-				if ctxOK {
-					rawSessionValue, rawOK := contextManager.SnapshotSessionByID(sess.ID)
-					if rawOK {
-						resultValue := decisionEngine.Evaluate(ctxSnapshot)
-						rawSession = &rawSessionValue
-						result = &resultValue
-					}
+		// The event has survived all gates, so it now becomes part of session raw
+		// state and can contribute to derived security context.
+		contextManager.Observe(sess.ID, lineage, securityStore, e)
+		ctxSnapshot, ctxOK := contextManager.ApplyEvent(sess.ID, e)
+		if ctxOK {
+			// Audit/session output only happens after both the raw session snapshot
+			// and derived decision result are available for the same event.
+			if rawSession, rawOK := contextManager.SnapshotSessionByID(sess.ID); rawOK {
+				result := decisionEngine.Evaluate(ctxSnapshot)
+				if err := auditMonitor.Record(e, &rawSession, &result); err != nil {
+					log.Printf("Audit: write_failed err=%v", err)
 				}
 			}
 		}
 
-		if err := auditMonitor.Record(e, rawSession, result); err != nil {
-			log.Printf("Audit: write_failed err=%v", err)
-		}
-
+		// EXIT is the last event we expect from this pid in the tracked tree, so
+		// remove it after all session/context processing for this event is done.
 		if e.Type == event.EventExit {
 			tracker.Remove(e.PID)
 		}

@@ -35,6 +35,7 @@ type AnalysisConfig struct {
 	InterpreterNames           []string `json:"interpreter_names,omitempty"`
 	ContainerRuntimeNames      []string `json:"container_runtime_names,omitempty"`
 	DangerousCapabilityNames   []string `json:"dangerous_capability_names,omitempty"`
+	LLMProviderURLs            []string `json:"llm_provider_urls,omitempty"`
 }
 
 // Thresholds defines the cutoffs that map numeric score to a decision action.

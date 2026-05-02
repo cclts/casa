@@ -109,6 +109,10 @@
       "CAP_NET_ADMIN",
       "CAP_NET_RAW",
       "CAP_SYS_PTRACE"
+    ],
+
+    "llm_provider_urls": [
+      "https://generativelanguage.googleapis.com"
     ]
   },
 
