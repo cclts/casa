@@ -73,9 +73,9 @@ func isRoutineShellProcess(procState *ProcessState) bool {
 		return false
 	}
 
-	name := strings.ToLower(strings.TrimSpace(procState.Comm))
+	name := strings.TrimSpace(procState.Comm)
 	if name == "" && procState.ExecPath != "" {
-		name = strings.ToLower(filepath.Base(strings.TrimSpace(procState.ExecPath)))
+		name = filepath.Base(strings.TrimSpace(procState.ExecPath))
 	}
 	switch name {
 	case "sh", "bash", "dash", "zsh":
@@ -89,7 +89,7 @@ func isTransparentRoutineExecEvent(e event.Event) bool {
 	if e.Type != event.EventExecve {
 		return false
 	}
-	base := strings.ToLower(filepath.Base(strings.TrimSpace(e.Path)))
+	base := filepath.Base(strings.TrimSpace(e.Path))
 	switch base {
 	case "uname":
 		return hasExactArgs(argsWithoutProgram(e.Args), "-a")

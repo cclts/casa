@@ -7,35 +7,35 @@ import (
 
 // isSuspiciousPath marks common execution locations used by fileless or short-lived payloads.
 func isSuspiciousPath(path string) bool {
-	lower := normalizePath(path)
-	if lower == "" {
+	normalized := normalizePath(path)
+	if normalized == "" {
 		return false
 	}
 
 	for _, pattern := range CurrentHeuristics().SuspiciousPathPatterns {
-		if strings.Contains(lower, pattern) {
+		if strings.Contains(normalized, pattern) {
 			return true
 		}
 	}
 
-	return strings.HasPrefix(lower, "memfd:") || strings.Contains(lower, " (deleted)")
+	return strings.HasPrefix(normalized, "memfd:") || strings.Contains(normalized, " (deleted)")
 }
 
 // isSensitivePath marks paths that are usually interesting for credential or system data access.
 func isSensitivePath(path string) bool {
-	lower := normalizePath(path)
-	if lower == "" {
+	normalized := normalizePath(path)
+	if normalized == "" {
 		return false
 	}
 
 	for _, prefix := range CurrentHeuristics().SensitivePathPrefixes {
-		if strings.HasPrefix(lower, prefix) {
+		if strings.HasPrefix(normalized, prefix) {
 			return true
 		}
 	}
 
 	for _, pattern := range CurrentHeuristics().SensitivePathPatterns {
-		if strings.Contains(lower, pattern) {
+		if strings.Contains(normalized, pattern) {
 			return true
 		}
 	}
@@ -44,12 +44,12 @@ func isSensitivePath(path string) bool {
 }
 
 func isMemfdOrDeletedPath(path string) bool {
-	lower := normalizePath(path)
-	if lower == "" {
+	normalized := normalizePath(path)
+	if normalized == "" {
 		return false
 	}
 
-	return strings.HasPrefix(lower, "memfd:") || strings.Contains(lower, " (deleted)")
+	return strings.HasPrefix(normalized, "memfd:") || strings.Contains(normalized, " (deleted)")
 }
 
 func isDeletedPath(path string) bool {
@@ -151,5 +151,5 @@ func basenameFromPath(path string) string {
 }
 
 func normalizePath(path string) string {
-	return strings.ToLower(strings.TrimSpace(path))
+	return strings.TrimSpace(path)
 }
