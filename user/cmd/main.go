@@ -169,16 +169,16 @@ func configureHeuristics(analysis rules.AnalysisConfig) {
 }
 
 func configureConfiguredConnectClassifier(ctx stdcontext.Context, analysis rules.AnalysisConfig) *provider.Classifier {
-	targets, err := provider.TargetsFromAnalysis(analysis)
+	cfg, err := provider.ConfigFromAnalysis(analysis)
 	if err != nil {
-		log.Printf("configured connect urls invalid: %v", err)
+		log.Printf("configured connect settings invalid: %v", err)
 		return nil
 	}
-	if len(targets) == 0 {
+	if len(cfg.Targets) == 0 && len(cfg.CIDRs) == 0 {
 		return nil
 	}
 
-	endpoints, err := provider.ResolveTargets(stdcontext.Background(), net.DefaultResolver, targets)
+	endpoints, err := provider.ResolveConfig(stdcontext.Background(), net.DefaultResolver, cfg)
 	if err != nil {
 		log.Printf("configured connect resolve failed: %v", err)
 		return nil
@@ -186,7 +186,7 @@ func configureConfiguredConnectClassifier(ctx stdcontext.Context, analysis rules
 	classifier := provider.NewClassifier(endpoints)
 	interval := time.Duration(analysis.ConfiguredConnectRefreshS) * time.Second
 	if interval > 0 {
-		provider.StartBackgroundRefresh(ctx, net.DefaultResolver, targets, interval, classifier)
+		provider.StartBackgroundRefresh(ctx, net.DefaultResolver, cfg, interval, classifier)
 	}
 	return classifier
 }

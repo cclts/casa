@@ -2,28 +2,38 @@ package provider
 
 import (
 	"fmt"
+	"net/netip"
 	"net/url"
 	"strings"
 
 	"github.com/cclts/casa/user/internal/rules"
 )
 
-func TargetsFromAnalysis(analysis rules.AnalysisConfig) ([]Target, error) {
+func ConfigFromAnalysis(analysis rules.AnalysisConfig) (Config, error) {
 	rawTargets := append([]string(nil), analysis.LLMProviderURLs...)
 	rawTargets = append(rawTargets, analysis.ChannelURLs...)
-	if len(rawTargets) == 0 {
-		return nil, nil
-	}
-
 	targets := make([]Target, 0, len(rawTargets))
 	for _, raw := range rawTargets {
 		target, err := parseTarget(raw)
 		if err != nil {
-			return nil, err
+			return Config{}, err
 		}
 		targets = append(targets, target)
 	}
-	return targets, nil
+
+	prefixes := make([]netip.Prefix, 0, len(analysis.KnownCIDRs))
+	for _, raw := range analysis.KnownCIDRs {
+		prefix, err := parseCIDR(raw)
+		if err != nil {
+			return Config{}, err
+		}
+		prefixes = append(prefixes, prefix)
+	}
+
+	return Config{
+		Targets: targets,
+		CIDRs:   prefixes,
+	}, nil
 }
 
 func parseTarget(raw string) (Target, error) {
@@ -53,4 +63,17 @@ func parseTarget(raw string) (Target, error) {
 		Host: strings.ToLower(strings.TrimSpace(u.Hostname())),
 		Port: port,
 	}, nil
+}
+
+func parseCIDR(raw string) (netip.Prefix, error) {
+	value := strings.TrimSpace(raw)
+	if value == "" {
+		return netip.Prefix{}, fmt.Errorf("known_cidrs contains empty value")
+	}
+
+	prefix, err := netip.ParsePrefix(value)
+	if err != nil {
+		return netip.Prefix{}, fmt.Errorf("parse known cidr %q: %w", raw, err)
+	}
+	return prefix.Masked(), nil
 }

@@ -16,10 +16,11 @@ type Resolver interface {
 
 type EndpointSet struct {
 	endpoints map[Endpoint]struct{}
+	prefixes  []netip.Prefix
 }
 
-func ResolveTargets(ctx stdcontext.Context, resolver Resolver, targets []Target) (EndpointSet, error) {
-	if len(targets) == 0 {
+func ResolveConfig(ctx stdcontext.Context, resolver Resolver, cfg Config) (EndpointSet, error) {
+	if len(cfg.Targets) == 0 && len(cfg.CIDRs) == 0 {
 		return EndpointSet{}, nil
 	}
 	if resolver == nil {
@@ -28,9 +29,10 @@ func ResolveTargets(ctx stdcontext.Context, resolver Resolver, targets []Target)
 
 	out := EndpointSet{
 		endpoints: make(map[Endpoint]struct{}),
+		prefixes:  append([]netip.Prefix(nil), cfg.CIDRs...),
 	}
 
-	for _, target := range targets {
+	for _, target := range cfg.Targets {
 		ips, err := resolver.LookupIP(ctx, "ip", target.Host)
 		if err != nil {
 			return EndpointSet{}, fmt.Errorf("resolve %s: %w", target.Host, err)
@@ -61,11 +63,14 @@ func parsePort(raw string) (uint16, error) {
 func StartBackgroundRefresh(
 	ctx stdcontext.Context,
 	resolver Resolver,
-	targets []Target,
+	cfg Config,
 	interval time.Duration,
 	classifier *Classifier,
 ) {
-	if classifier == nil || len(targets) == 0 || interval <= 0 {
+	if classifier == nil || interval <= 0 {
+		return
+	}
+	if len(cfg.Targets) == 0 && len(cfg.CIDRs) == 0 {
 		return
 	}
 	if resolver == nil {
@@ -80,7 +85,7 @@ func StartBackgroundRefresh(
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				endpoints, err := ResolveTargets(ctx, resolver, targets)
+				endpoints, err := ResolveConfig(ctx, resolver, cfg)
 				if err != nil {
 					log.Printf("configured connect refresh failed: %v", err)
 					continue

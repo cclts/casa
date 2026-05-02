@@ -13,7 +13,7 @@ func (s EndpointSet) ContainsConnect(e event.Event) bool {
 	}
 
 	addr := strings.TrimSpace(e.Addr)
-	if addr == "" || e.Port == 0 || len(s.endpoints) == 0 {
+	if addr == "" || e.Port == 0 {
 		return false
 	}
 
@@ -21,9 +21,20 @@ func (s EndpointSet) ContainsConnect(e event.Event) bool {
 	if err != nil {
 		return false
 	}
+	parsed = parsed.Unmap()
+
+	for _, prefix := range s.prefixes {
+		if prefix.Contains(parsed) {
+			return true
+		}
+	}
+
+	if len(s.endpoints) == 0 {
+		return false
+	}
 
 	_, ok := s.endpoints[Endpoint{
-		Addr: parsed.Unmap(),
+		Addr: parsed,
 		Port: e.Port,
 	}]
 	return ok

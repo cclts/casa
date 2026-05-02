@@ -7,6 +7,11 @@ type Target struct {
 	Port uint16
 }
 
+type Config struct {
+	Targets []Target
+	CIDRs   []netip.Prefix
+}
+
 type Endpoint struct {
 	Addr netip.Addr
 	Port uint16

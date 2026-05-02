@@ -1,145 +1,110 @@
 # CASA
 
-CASA monitors the `openclaw-gateway` process tree, derives session-level context from observed events, and evaluates weighted CEL rules to produce `audit.log` and `alert.log`.
+CASA monitors the `openclaw-gateway` process tree, derives session-level context from accepted events, and evaluates weighted CEL rules to produce `audit.log` and `alert.log`.
 
-## Validated Environment
+## ⚠️ Critical Requirement
 
-This project is sensitive to runtime version changes, especially OpenClaw itself.
+CASA is highly sensitive to **OpenClaw version** and **Linux kernel + eBPF toolchain**.
 
-### 1. OpenClaw Version
-
-This is the most important compatibility point.
-
-CASA currently depends on OpenClaw runtime behavior for:
+If OpenClaw runtime behavior changes, CASA may lose:
 
 - CLI session boundary detection
-- `openclaw-gateway` process-tree tracking
-- expected child-process patterns
+- `openclaw-gateway` tree tracking
 - routine-noise filtering
+- expected child-process patterns
 
 Validated baseline:
 
 ```text
 OpenClaw 2026.3.24 (cff6dc9)
+Kernel 6.17.0-20-generic
+Architecture aarch64
+bpftool v7.7.0
+libbpf v1.7
+clang 20.1.8
+llc 20.1.8
+Node v24.14.1
+Go go1.24.0 linux/arm64
+Environment Ubuntu VM on VMware Fusion
 ```
 
-### 2. Kernel + eBPF Toolchain
-
-This is the second most important compatibility point.
-
-Validated baseline:
-
-```text
-Kernel: 6.17.0-20-generic
-Architecture: aarch64
-bpftool: v7.7.0
-libbpf: v1.7
-clang: 20.1.8
-llc: 20.1.8
-bpffs: /sys/fs/bpf mounted
-kernel.unprivileged_bpf_disabled = 2
-Environment: Ubuntu VM on VMware Fusion
-```
-
-### 3. Runtime Versions
-
-Validated baseline:
-
-```text
-Node: v24.14.1
-Go: go1.24.0 linux/arm64
-```
-
-## Build and Run
-
-### Prerequisites
-
-Before running CASA evaluation on Linux, make sure:
-
-- OpenClaw is already installed
-- OpenClaw onboarding is already completed
-- a working LLM provider and API key are already configured for OpenClaw
-
-`setup.sh` only prepares CASA build dependencies. It does not install or configure OpenClaw for you.
-
-Example:
+Before evaluation, verify:
 
 ```bash
 openclaw --version
-openclaw onboard --install-daemon
+go version
+uname -r
 ```
 
-Without a configured provider/API key, OpenClaw CLI prompts may fail and evaluation results will not be meaningful.
+OpenClaw must already be:
 
-### Setup
+- installed
+- onboarded
+- configured with a working LLM provider and API key
+
+Without a working provider/API key, OpenClaw prompts may fail and CASA evaluation will not be meaningful.
+
+The bundled `user/config/rules.json` is only a baseline template. For a real evaluation environment, **you must configure at least:**
+
+- `analysis.llm_provider_urls`
+
+If your environment also includes non-security communication services, configure as needed:
+
+- `analysis.channel_urls`
+- `analysis.known_cidrs`
+
+## ❗ Quick Start
+
+1. Install OpenClaw and complete onboarding.
+2. Configure a working LLM provider/API key for OpenClaw.
+3. Run:
 
 ```bash
 ./setup.sh
 ```
 
-After `setup.sh`, verify:
+4. Verify:
 
 ```bash
-go version
 openclaw --version
+go version
 ```
 
-### Build
+5. Build and run:
 
 ```bash
 make
+make run
 ```
 
-### Run
+Optional:
 
-```bash
-make run 2>&1 | stdbuf -oL tee trace.log
-```
+- reload rules with `kill -HUP $(cat /var/run/casa.pid)`
+- configure `channel_urls` or `known_cidrs` if your evaluation environment has non-security network traffic that should be excluded from CASA network-derived rules
+- do not rely on the bundled `rules.json` unchanged; fill in `analysis.llm_provider_urls` for your actual provider
 
-### Reload Rules
+## What CASA Monitors
 
-CASA writes its pid file to `CASA_PID_PATH` and supports rule reload with `SIGHUP`.
+- tracker scope: the `openclaw-gateway` process tree
+- session scope: one OpenClaw CLI invocation window
+- analyzed events: accepted `EXECVE`, `OPENAT`, `CONNECT`, and `EXIT`
 
-```bash
-kill -HUP $(cat /var/run/casa.pid)
-```
+## Logs
 
-## Derived Context
+- `events.log`
+  accepted events that entered session/context processing
+- `sessions.log`
+  raw session snapshots
+- `audit.log`
+  rule hits once total score reaches `thresholds.log`
+- `alert.log`
+  rule hits once total score reaches `thresholds.alert`
 
-Rules evaluate against three context groups.
+Current `sessions.log` reasons:
 
-### Execution
-
-```text
-execution.suspicious_path_exec
-execution.deep_chain
-execution.shell_in_chain
-execution.network_tool_in_chain
-execution.interpreter_in_chain
-execution.container_runtime_in_chain
-execution.memfd_or_deleted_exec
-```
-
-### Capability
-
-```text
-capability.has_dangerous_caps
-capability.dangerous_count
-capability.seccomp_disabled
-```
-
-### History
-
-```text
-history.connect_then_exec
-history.sensitive_then_network
-history.sensitive_then_execve
-history.burst_open
-history.burst_connect
-history.burst_exec
-history.write_then_exec_same_path
-history.opened_deleted_path
-```
+- `periodic_flush`
+- `session_closed`
+- `shutdown`
 
 ## Rule Configuration
 
@@ -158,9 +123,8 @@ Top-level JSON shape:
     "llm_provider_urls": [
       "https://generativelanguage.googleapis.com"
     ],
-    "channel_urls": [
-      "https://api.telegram.org"
-    ],
+    "channel_urls": [],
+    "known_cidrs": [],
     "configured_connect_refresh_seconds": 300
   },
   "thresholds": {
@@ -201,16 +165,24 @@ analysis.container_runtime_names
 analysis.dangerous_capability_names
 analysis.llm_provider_urls
 analysis.channel_urls
+analysis.known_cidrs
 analysis.configured_connect_refresh_seconds
 ```
 
 ### Configured Connect Ignore
 
-`analysis.llm_provider_urls` is for LLM API endpoints used by OpenClaw itself.
+- `analysis.llm_provider_urls`
+  required for real evaluation; LLM API endpoints used by OpenClaw itself
+- `analysis.channel_urls`
+  optional non-security communication endpoints that should not affect network-derived rules
+- `analysis.known_cidrs`
+  optional known network ranges for services that are not reliably covered by DNS resolution or may use hard-coded IPs
+- `analysis.configured_connect_refresh_seconds`
+  periodic DNS refresh interval for configured URLs
 
-`analysis.channel_urls` is for other non-security communication endpoints that should not affect CASA network-derived rules, such as Telegram.
+CASA resolves configured URLs at startup and can refresh them periodically. `known_cidrs` is matched directly without DNS.
 
-CASA resolves these URLs at startup and can refresh them periodically with `analysis.configured_connect_refresh_seconds`. Matching `CONNECT` events are ignored before they enter session context and decision scoring.
+These settings are environment-specific. CASA supports them, but evaluation users should configure `channel_urls` and `known_cidrs` for their own environment.
 
 ### Thresholds
 
@@ -229,49 +201,42 @@ rules[].weight
 rules[].enabled
 ```
 
-## CEL Input Shape
+## Derived Context
 
-```json
-{
-  "session_id": 123,
-  "execution": {
-    "suspicious_path_exec": true,
-    "deep_chain": true,
-    "shell_in_chain": true,
-    "network_tool_in_chain": false,
-    "interpreter_in_chain": false,
-    "container_runtime_in_chain": false,
-    "memfd_or_deleted_exec": false
-  },
-  "capability": {
-    "has_dangerous_caps": false,
-    "dangerous_count": 0,
-    "seccomp_disabled": true
-  },
-  "history": {
-    "connect_then_exec": true,
-    "sensitive_then_network": false,
-    "sensitive_then_execve": false,
-    "burst_open": false,
-    "burst_connect": false,
-    "burst_exec": false,
-    "write_then_exec_same_path": false,
-    "opened_deleted_path": false
-  }
-}
+### Execution
+
+```text
+execution.suspicious_path_exec
+execution.deep_chain
+execution.shell_in_chain
+execution.network_tool_in_chain
+execution.interpreter_in_chain
+execution.container_runtime_in_chain
+execution.memfd_or_deleted_exec
 ```
 
-## Rule Semantics
+### Capability
 
-- each enabled rule is compiled at reload time
-- rules evaluate against derived context, not raw events directly
-- each rule can trigger at most once per session
-- score accumulates across the session
-- only newly triggered rules add new score
-- only newly triggered rules appear in `audit.log` and `alert.log`
+```text
+capability.has_dangerous_caps
+capability.dangerous_count
+capability.seccomp_disabled
+```
 
+### History
 
-## Environment Variables
+```text
+history.connect_then_exec
+history.sensitive_then_network
+history.sensitive_then_execve
+history.burst_open
+history.burst_connect
+history.burst_exec
+history.write_then_exec_same_path
+history.opened_deleted_path
+```
+
+## Environment Variables (Optional)
 
 ### Log and Rule Paths
 
@@ -305,42 +270,3 @@ CASA_AUDIT_LOG_PATH=/tmp/audit.log \
 CASA_ALERT_LOG_PATH=/tmp/alert.log \
 make run
 ```
-
-## Pipeline Model
-
-High-level flow:
-
-```text
-eBPF events
-  -> process-tree tracking
-  -> CLI session tracking
-  -> derived context
-  -> CEL rules
-  -> logs
-```
-
-CASA distinguishes three scopes:
-
-- `events.log`: events inside the tracked `openclaw-gateway` tree
-- `session`: one OpenClaw CLI invocation window
-- `context`: derived session-level features used by rules
-
-## Logs
-
-1. `events.log`
-  - contains events from the tracked `openclaw-gateway` tree
-  - does not carry `session_id`
-  - does not carry decision output
-2. `sessions.log`
-  - lifecycle-oriented session snapshots
-  - does not carry decision output
-  - current reasons:
-    - `periodic_flush`
-    - `session_closed`
-    - `shutdown`
-3. `audit.log`
-  - contains the triggering event and decision payload
-  - written when total score reaches `thresholds.log`
-4. `alert.log`
-  - same structure as `audit.log`
-  - written when total score reaches `thresholds.alert`
