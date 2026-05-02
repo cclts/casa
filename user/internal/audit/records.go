@@ -81,8 +81,7 @@ type DecisionRecord struct {
 }
 
 type sessionAggregate struct {
-	ID             uint32
-	AlertTriggered bool
+	ID uint32
 }
 
 type TriggeredRuleRecord struct {

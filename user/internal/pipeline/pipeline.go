@@ -31,6 +31,15 @@ func Run(ctx stdcontext.Context, events <-chan event.Event, decisionEngine *deci
 	contextManager := context.NewManager()
 	sessionTracker.StartJanitor(ctx, 500*time.Millisecond, func(id process.SessionID, closedAt time.Time) {
 		contextManager.CloseSession(id, closedAt)
+		rawSession, ok := contextManager.SnapshotSessionByID(id)
+		if !ok {
+			decisionEngine.CloseSession(uint32(id))
+			return
+		}
+		if err := auditMonitor.RecordSessionSnapshot(rawSession, "session_closed", closedAt); err != nil {
+			log.Printf("Audit: session_write_failed err=%v", err)
+		}
+		decisionEngine.CloseSession(uint32(id))
 	})
 
 	if err := process.BootstrapOpenClaw(tracker, securityStore); err != nil {

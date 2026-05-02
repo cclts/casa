@@ -131,7 +131,6 @@ func (m *Manager) SnapshotSessionByID(sessionID process.SessionID) (SessionSnaps
 
 	return session.snapshot(), true
 }
-
 func (m *Manager) CloseSession(sessionID process.SessionID, closedAt time.Time) {
 	m.mu.Lock()
 	defer m.mu.Unlock()

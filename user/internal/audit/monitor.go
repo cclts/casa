@@ -206,7 +206,7 @@ func (m *Monitor) DiscardEvent(e event.Event) {
 	delete(m.pending, eventKeyFromEvent(e))
 }
 
-// Record writes thresholded audit logs and session snapshots. It also flushes
+// Record writes thresholded audit logs. It also flushes
 // the corresponding events.log record now that session/context metadata exists.
 func (m *Monitor) Record(e event.Event, raw context.SessionSnapshot, depth int, result decision.Result) error {
 	m.mu.Lock()
@@ -227,33 +227,42 @@ func (m *Monitor) Record(e event.Event, raw context.SessionSnapshot, depth int, 
 	session := m.getOrCreateSessionLocked(raw.ID, e.Time)
 	m.rawSessions[raw.ID] = raw
 
-	if result.Score >= result.LogThreshold {
+	if len(result.Triggered) > 0 && result.Score >= result.LogThreshold {
 		if err := m.writeFullRecordLocked(m.auditFile, "audit log", session, e, result); err != nil {
 			m.writerErr = err
 			return err
 		}
 	}
 
-	if result.CrossesAlertThreshold() {
+	if len(result.Triggered) > 0 && result.CrossesAlertThreshold() {
 		if err := m.writeFullRecordLocked(m.alertFile, "alert log", session, e, result); err != nil {
 			m.writerErr = err
 			return err
 		}
 	}
 
-	if !session.AlertTriggered && result.CrossesAlertThreshold() {
-		session.AlertTriggered = true
-		if err := m.writeSessionRecordLocked(raw, session, "alert_threshold_crossed", e.Time); err != nil {
-			m.writerErr = err
-			return err
-		}
+	return nil
+}
+
+// RecordSessionSnapshot writes one lifecycle-driven session snapshot.
+func (m *Monitor) RecordSessionSnapshot(raw context.SessionSnapshot, reason string, ts time.Time) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if m.writerErr != nil {
+		return m.writerErr
+	}
+	if m.closed {
+		return errors.New("audit monitor is closed")
 	}
 
-	if e.Type == event.EventExit && !raw.ClosedAt.IsZero() && raw.ClosedAt.Equal(e.Time) {
-		if err := m.writeSessionRecordLocked(raw, session, "session_root_exit", e.Time); err != nil {
-			m.writerErr = err
-			return err
-		}
+	session := m.getOrCreateSessionLocked(raw.ID, raw.CreatedAt)
+	m.rawSessions[raw.ID] = raw
+	if err := m.writeSessionRecordLocked(raw, session, reason, ts); err != nil {
+		m.writerErr = err
+		return err
+	}
+	if !raw.ClosedAt.IsZero() {
 		delete(m.sessions, raw.ID)
 		delete(m.rawSessions, raw.ID)
 	}
