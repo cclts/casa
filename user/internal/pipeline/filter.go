@@ -114,13 +114,8 @@ func isIgnorableConnectNoise(e event.Event) bool {
 		return true
 	}
 
-	parsed, err := netip.ParseAddr(addr)
-	if err != nil {
+	if _, err := netip.ParseAddr(addr); err != nil {
 		return false
-	}
-
-	if parsed.IsLoopback() {
-		return true
 	}
 
 	return false

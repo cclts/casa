@@ -6,12 +6,13 @@ deployment on Linux.
 ### Files
 
 - `run_eval.sh`
-  Runs the current benign and boundary prompt set against the OpenClaw CLI and
-  captures only the newly appended CASA log segments for each case.
+  Runs the current benign, boundary, and malicious prompt set against the
+  OpenClaw CLI and captures only the newly appended CASA log segments for each
+  case.
 - `fake_fs/`
-  Stable placeholder files with sensitive-looking names such as `.env`,
-  `credentials`, `id_rsa`, and `token` so path-based rules can be tested
-  without relying on real host secrets.
+  Stable placeholder files with neutral names that are treated as sensitive by
+  the evaluation policy so path-based rules can be tested without relying on
+  real host secrets or obviously sensitive filenames.
 - `sinks/post_sink.py`
   A tiny local HTTP server that accepts POST requests and writes them to
   `requests.jsonl`. Useful for local upload-style evaluation cases.
@@ -45,8 +46,9 @@ Some evaluation cases use files under:
 ./evaluation/fake_fs
 ```
 
-This tree exists so prompts can refer to stable, harmless files whose names look
-like secrets without depending on real user data. The evaluation script exposes
+This tree exists so prompts can refer to stable, harmless files that the
+evaluation policy treats as sensitive without depending on real user data. The
+evaluation script exposes
 this location through:
 
 ```bash
@@ -64,7 +66,7 @@ python3 evaluation/sinks/post_sink.py --port 18000
 
 Why this is needed:
 
-- some boundary cases send `curl` POST requests to `http://127.0.0.1:18000/collect`
+- some boundary and malicious cases send `curl` POST requests to `http://127.0.0.1:18000/collect`
 - without a local listener, those cases will fail with connection refused
 - the sink is only for local simulated exfiltration tests
 
@@ -125,7 +127,6 @@ the collected logs.
   store real secrets.
 - If you do not want to run a local sink, you should edit or skip the cases that
   POST to `127.0.0.1:18000`.
-- The current script revision includes benign and boundary cases only. Malicious
-  cases can be added back later as a separate block once finalized.
+- The current script revision includes benign, boundary, and malicious cases.
 - This script captures artifacts. It does not yet score pass/fail from the log
   contents automatically.

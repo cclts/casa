@@ -29,13 +29,24 @@ func TestShouldIngestIntoContextFiltersIgnorableConnectNoise(t *testing.T) {
 		{Type: event.EventConnect, Addr: "142.250.26.95", Port: 0},
 		{Type: event.EventConnect, Addr: "", Port: 443},
 		{Type: event.EventConnect, Addr: "0.0.0.0"},
-		{Type: event.EventConnect, Addr: "127.0.0.53", Port: 53},
-		{Type: event.EventConnect, Addr: "127.0.0.1", Port: 11434},
 	}
 
 	for _, evt := range cases {
 		if ShouldIngestIntoContext(evt) {
 			t.Fatalf("expected connect noise %+v to be filtered from context ingestion", evt)
+		}
+	}
+}
+
+func TestShouldIngestIntoContextKeepsLoopbackConnectsForLocalSinks(t *testing.T) {
+	cases := []event.Event{
+		{Type: event.EventConnect, Addr: "127.0.0.53", Port: 53},
+		{Type: event.EventConnect, Addr: "127.0.0.1", Port: 11434},
+	}
+
+	for _, evt := range cases {
+		if !ShouldIngestIntoContext(evt) {
+			t.Fatalf("expected loopback connect %+v to remain eligible for context ingestion", evt)
 		}
 	}
 }

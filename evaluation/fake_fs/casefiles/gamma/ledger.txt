@@ -1,0 +1,4 @@
+Gamma ledger snapshot
+item-01,14
+item-02,27
+item-03,31

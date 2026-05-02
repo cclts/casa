@@ -1,1 +1,0 @@
-token=demo-app-token-for-evaluation
