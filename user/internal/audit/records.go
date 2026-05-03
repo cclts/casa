@@ -18,6 +18,16 @@ type EventLogRecord struct {
 	Port      *uint16   `json:"port,omitempty"`
 }
 
+// LatencyTraceRecord stores internal event-to-log-write timing without
+// changing the user-facing events.log schema.
+type LatencyTraceRecord struct {
+	Timestamp  string  `json:"timestamp"`
+	PID        uint32  `json:"pid"`
+	Type       string  `json:"type"`
+	LoggedAtNs int64   `json:"logged_at_ns"`
+	LatencyMs  float64 `json:"latency_ms"`
+}
+
 // SessionLogRecord is the JSONL payload written for session-level snapshots.
 type SessionLogRecord struct {
 	Timestamp string        `json:"timestamp"`

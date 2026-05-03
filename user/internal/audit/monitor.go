@@ -17,6 +17,7 @@ const sessionFlushInterval = 30 * time.Second
 type Monitor struct {
 	mu          sync.Mutex
 	eventFile   *os.File
+	latencyFile *os.File
 	sessionFile *os.File
 	auditFile   *os.File
 	alertFile   *os.File
@@ -28,8 +29,10 @@ type Monitor struct {
 	closed      bool
 }
 
-// NewMonitor opens append-only events.log, sessions.log, audit.log, and alert.log files.
-func NewMonitor(eventPath, sessionPath, logPath, alertPath string) (*Monitor, error) {
+// NewMonitor opens append-only events.log, sessions.log, audit.log, and
+// alert.log files. When latencyPath is non-empty, it also writes an internal
+// event-to-log-write latency trace.
+func NewMonitor(eventPath, latencyPath, sessionPath, logPath, alertPath string) (*Monitor, error) {
 	if eventPath == "" {
 		eventPath = defaultEventLogPath
 	}
@@ -48,15 +51,30 @@ func NewMonitor(eventPath, sessionPath, logPath, alertPath string) (*Monitor, er
 		return nil, err
 	}
 
+	var latencyFile *os.File
+	if latencyPath != "" {
+		latencyFile, err = openLogFile(latencyPath)
+		if err != nil {
+			_ = eventFile.Close()
+			return nil, err
+		}
+	}
+
 	sessionFile, err := openLogFile(sessionPath)
 	if err != nil {
 		_ = eventFile.Close()
+		if latencyFile != nil {
+			_ = latencyFile.Close()
+		}
 		return nil, err
 	}
 
 	auditFile, err := openLogFile(logPath)
 	if err != nil {
 		_ = eventFile.Close()
+		if latencyFile != nil {
+			_ = latencyFile.Close()
+		}
 		_ = sessionFile.Close()
 		return nil, err
 	}
@@ -64,6 +82,9 @@ func NewMonitor(eventPath, sessionPath, logPath, alertPath string) (*Monitor, er
 	alertFile, err := openLogFile(alertPath)
 	if err != nil {
 		_ = eventFile.Close()
+		if latencyFile != nil {
+			_ = latencyFile.Close()
+		}
 		_ = sessionFile.Close()
 		_ = auditFile.Close()
 		return nil, err
@@ -71,6 +92,7 @@ func NewMonitor(eventPath, sessionPath, logPath, alertPath string) (*Monitor, er
 
 	m := &Monitor{
 		eventFile:   eventFile,
+		latencyFile: latencyFile,
 		sessionFile: sessionFile,
 		auditFile:   auditFile,
 		alertFile:   alertFile,
@@ -130,6 +152,11 @@ func (m *Monitor) Close() error {
 		}
 	}
 	if firstErr == nil {
+		if err := syncFile(m.latencyFile); err != nil {
+			firstErr = err
+		}
+	}
+	if firstErr == nil {
 		if err := syncFile(m.sessionFile); err != nil {
 			firstErr = err
 		}
@@ -149,6 +176,12 @@ func (m *Monitor) Close() error {
 			firstErr = err
 		}
 		m.eventFile = nil
+	}
+	if m.latencyFile != nil {
+		if err := m.latencyFile.Close(); err != nil && firstErr == nil {
+			firstErr = err
+		}
+		m.latencyFile = nil
 	}
 	if m.sessionFile != nil {
 		if err := m.sessionFile.Close(); err != nil && firstErr == nil {
@@ -189,6 +222,13 @@ func (m *Monitor) Record(e event.Event, raw *context.SessionSnapshot, result *de
 	if err := writeJSONL(m.eventFile, buildEventLogRecord(e), "event log"); err != nil {
 		m.writerErr = err
 		return err
+	}
+	if m.latencyFile != nil {
+		loggedAt := time.Now()
+		if err := writeJSONL(m.latencyFile, buildLatencyTraceRecord(e, loggedAt), "latency trace"); err != nil {
+			m.writerErr = err
+			return err
+		}
 	}
 
 	if raw == nil || result == nil {

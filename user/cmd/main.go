@@ -23,6 +23,7 @@ import (
 
 type Config struct {
 	EventLogPath   string
+	LatencyLogPath string
 	SessionLogPath string
 	RulePath       string
 	LogPath        string
@@ -60,7 +61,7 @@ func main() {
 	stopReload := setupReload(decisionEngine, cfg.RulePath)
 	defer stopReload()
 
-	auditMonitor, err := audit.NewMonitor(cfg.EventLogPath, cfg.SessionLogPath, cfg.LogPath, cfg.AlertPath)
+	auditMonitor, err := audit.NewMonitor(cfg.EventLogPath, cfg.LatencyLogPath, cfg.SessionLogPath, cfg.LogPath, cfg.AlertPath)
 	if err != nil {
 		log.Fatalf("initialize audit monitor: %v", err)
 	}
@@ -138,6 +139,7 @@ func main() {
 func loadConfig() Config {
 	return Config{
 		EventLogPath:   getenvFirst([]string{"CASA_EVENTS_LOG_PATH", "CASA_EVENTS_LOG"}, "user/logs/events.log"),
+		LatencyLogPath: getenvFirst([]string{"CASA_LATENCY_TRACE_PATH", "CASA_LATENCY_TRACE"}, ""),
 		SessionLogPath: getenvFirst([]string{"CASA_SESSIONS_LOG_PATH", "CASA_SESSIONS_LOG"}, "user/logs/sessions.log"),
 		RulePath:       getenv("CASA_RULES_PATH", "user/config/rules.json"),
 		LogPath:        getenv("CASA_AUDIT_LOG_PATH", "user/logs/audit.log"),

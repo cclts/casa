@@ -1,8 +1,6 @@
 package pipeline
 
 import (
-	"log"
-
 	"github.com/cclts/casa/user/internal/context"
 	"github.com/cclts/casa/user/internal/event"
 	"github.com/cclts/casa/user/internal/process"
@@ -17,18 +15,15 @@ func shouldIgnoreSecurityPipelineEvent(
 	providerClassifier *provider.Classifier,
 ) bool {
 	if shouldIgnoreConfiguredConnect(e, tracker, providerClassifier) {
-		log.Printf("[PIPELINE IGNORE] type=%s pid=%d ppid=%d reason=configured_connect", e.Type.String(), e.PID, e.PPID)
 		return true
 	}
 
 	if e.Type != event.EventExit && !ShouldIngestIntoContext(e) {
 		contextManager.ObserveIgnored(sessionID, e)
-		log.Printf("[PIPELINE IGNORE] type=%s pid=%d ppid=%d reason=%s", e.Type.String(), e.PID, e.PPID, ignoreReason(e))
 		return true
 	}
 
 	if e.Type == event.EventExit && contextManager.ObserveIgnored(sessionID, e) {
-		log.Printf("[PIPELINE IGNORE] type=%s pid=%d ppid=%d reason=normalized_exit", e.Type.String(), e.PID, e.PPID)
 		return true
 	}
 

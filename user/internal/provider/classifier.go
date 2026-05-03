@@ -1,7 +1,6 @@
 package provider
 
 import (
-	"log"
 	"sync"
 
 	"github.com/cclts/casa/user/internal/event"
@@ -30,19 +29,14 @@ func (c *Classifier) ShouldIgnoreConfiguredConnect(e event.Event, tracker *proce
 
 	info, ok := tracker.GetInfo(e.PID)
 	if ok {
-		ignored := info.Depth == 0
-		log.Printf("[CONFIGURED CONNECT] pid=%d ppid=%d addr=%s port=%d matched=true depth=%d ignored=%t", e.PID, e.PPID, e.Addr, e.Port, info.Depth, ignored)
-		return ignored
+		return info.Depth == 0
 	}
 
 	parent, ok := tracker.GetInfo(e.PPID)
 	if ok {
-		ignored := parent.Depth == 0
-		log.Printf("[CONFIGURED CONNECT] pid=%d ppid=%d addr=%s port=%d matched=true parent_depth=%d ignored=%t", e.PID, e.PPID, e.Addr, e.Port, parent.Depth, ignored)
-		return ignored
+		return parent.Depth == 0
 	}
 
-	log.Printf("[CONFIGURED CONNECT] pid=%d ppid=%d addr=%s port=%d matched=true ignored=false reason=no_tracker_info", e.PID, e.PPID, e.Addr, e.Port)
 	return false
 }
 

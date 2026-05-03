@@ -1,6 +1,10 @@
 package audit
 
-import "github.com/cclts/casa/user/internal/event"
+import (
+	"time"
+
+	"github.com/cclts/casa/user/internal/event"
+)
 
 func buildEventLogRecord(e event.Event) EventLogRecord {
 	record := EventLogRecord{
@@ -43,6 +47,18 @@ func buildEventRecord(e event.Event) EventRecord {
 	}
 	populateEventRecordFields(&record, e)
 	return record
+}
+
+func buildLatencyTraceRecord(e event.Event, loggedAt time.Time) LatencyTraceRecord {
+	loggedAtNs := loggedAt.UnixNano()
+	eventNs := e.Time.UnixNano()
+	return LatencyTraceRecord{
+		Timestamp:  e.TimeHuman,
+		PID:        e.PID,
+		Type:       e.Type.String(),
+		LoggedAtNs: loggedAtNs,
+		LatencyMs:  float64(loggedAtNs-eventNs) / 1_000_000,
+	}
 }
 
 func populateEventRecordFields(record *EventRecord, e event.Event) {

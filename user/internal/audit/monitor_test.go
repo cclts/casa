@@ -16,6 +16,7 @@ func TestRecordSessionSnapshotWritesLifecycleReasonAndClearsClosedSession(t *tes
 	sessionPath := filepath.Join(dir, "sessions.log")
 	m, err := NewMonitor(
 		filepath.Join(dir, "events.log"),
+		filepath.Join(dir, "latency.log"),
 		sessionPath,
 		filepath.Join(dir, "audit.log"),
 		filepath.Join(dir, "alert.log"),
@@ -55,6 +56,7 @@ func TestFlushSessionsLockedWritesPeriodicSnapshots(t *testing.T) {
 	sessionPath := filepath.Join(dir, "sessions.log")
 	m, err := NewMonitor(
 		filepath.Join(dir, "events.log"),
+		filepath.Join(dir, "latency.log"),
 		sessionPath,
 		filepath.Join(dir, "audit.log"),
 		filepath.Join(dir, "alert.log"),
