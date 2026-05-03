@@ -83,11 +83,10 @@ Optional:
 - configure `channel_urls` or `known_cidrs` if your evaluation environment has non-security network traffic that should be excluded from CASA network-derived rules
 - do not rely on the bundled `rules.json` unchanged; fill in `analysis.llm_provider_urls` for your actual provider
 
-## What CASA Monitors
 
-- tracker scope: the `openclaw-gateway` process tree
-- session scope: one OpenClaw CLI invocation window
-- analyzed events: accepted `EXECVE`, `OPENAT`, `CONNECT`, and `EXIT`
+## 📊 Evaluation
+
+For evaluation usage and scripts, see the files under `evaluation/`.
 
 ## Logs
 
@@ -107,41 +106,6 @@ Current `sessions.log` reasons:
 - `shutdown`
 
 ## Rule Configuration
-
-Default rule file:
-
-```text
-user/config/rules.json
-```
-
-Top-level JSON shape:
-
-```json
-{
-  "analysis": {
-    "lineage_max_depth": 4,
-    "llm_provider_urls": [
-      "https://generativelanguage.googleapis.com"
-    ],
-    "channel_urls": [],
-    "known_cidrs": [],
-    "configured_connect_refresh_seconds": 300
-  },
-  "thresholds": {
-    "log": 5,
-    "alert": 10
-  },
-  "rules": [
-    {
-      "name": "shell_download_execute",
-      "description": "Shell chain with download and execution behavior",
-      "expr": "history.connect_then_exec && execution.shell_in_chain",
-      "weight": 4,
-      "enabled": true
-    }
-  ]
-}
-```
 
 ### Analysis Fields
 
@@ -234,39 +198,4 @@ history.burst_connect
 history.burst_exec
 history.write_then_exec_same_path
 history.opened_deleted_path
-```
-
-## Environment Variables (Optional)
-
-### Log and Rule Paths
-
-```bash
-CASA_EVENTS_LOG_PATH     # default: user/logs/events.log
-CASA_EVENTS_LOG          # alias for CASA_EVENTS_LOG_PATH
-
-CASA_SESSIONS_LOG_PATH   # default: user/logs/sessions.log
-CASA_SESSIONS_LOG        # alias for CASA_SESSIONS_LOG_PATH
-
-CASA_AUDIT_LOG_PATH      # default: user/logs/audit.log
-CASA_ALERT_LOG_PATH      # default: user/logs/alert.log
-
-CASA_RULES_PATH          # default: user/config/rules.json
-```
-
-### Runtime Paths
-
-```bash
-CASA_BPF_PATH            # default: ebpf/build/probes.o
-CASA_PID_PATH            # default: /var/run/casa.pid
-```
-
-### Example
-
-```bash
-CASA_RULES_PATH=/path/to/rules.json \
-CASA_EVENTS_LOG_PATH=/tmp/events.log \
-CASA_SESSIONS_LOG_PATH=/tmp/sessions.log \
-CASA_AUDIT_LOG_PATH=/tmp/audit.log \
-CASA_ALERT_LOG_PATH=/tmp/alert.log \
-make run
 ```
