@@ -1,0 +1,3 @@
+session=demo-evaluation
+phase=staging
+operator=local-test
