@@ -4,7 +4,6 @@ import (
 	"sync"
 
 	"github.com/cclts/casa/user/internal/context"
-	"github.com/cclts/casa/user/internal/diag"
 	"github.com/cclts/casa/user/internal/rules"
 )
 
@@ -83,18 +82,6 @@ func (e *Engine) Evaluate(snapshot context.ContextSnapshot) Result {
 	}
 	e.mu.Unlock()
 
-	if diag.Enabled() {
-		diag.Logf("[DECISION DEBUG] session=%d matched=%v newly_triggered=%v increment=%d score=%d action=%s history=%v",
-			snapshot.SessionID,
-			ruleNames(matched),
-			ruleNames(triggered),
-			increment,
-			score,
-			action,
-			snapshot.History,
-		)
-	}
-
 	return Result{
 		Profile:        profile,
 		Score:          score,
@@ -104,17 +91,6 @@ func (e *Engine) Evaluate(snapshot context.ContextSnapshot) Result {
 		LogThreshold:   threshold.Log,
 		AlertThreshold: threshold.Alert,
 	}
-}
-
-func ruleNames(items []rules.TriggeredRule) []string {
-	if len(items) == 0 {
-		return nil
-	}
-	out := make([]string, 0, len(items))
-	for _, item := range items {
-		out = append(out, item.Name)
-	}
-	return out
 }
 
 func (e *Engine) getOrCreateSessionStateLocked(sessionID uint32) *sessionState {
