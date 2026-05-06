@@ -48,8 +48,8 @@ func Run(ctx stdcontext.Context, events <-chan event.Event, decisionEngine *deci
 	log.Println("bootstrap done")
 
 	for e := range events {
-		e.Latency.EventSendDoneNS = time.Now().UnixNano()
-		e.Latency.EventSendDoneNS = time.Now().UnixNano()
+		e.Latency.EventSendDoneAt = time.Now()
+		e.Latency.EventSendDoneAt = time.Now()
 
 		if e.Type == event.EventExecve {
 			tracker.Propagate(e.PID, e.PPID, isTransparentRoutineExec(e))

@@ -23,8 +23,8 @@ type bpfObjects struct {
 // Sample carries one raw eBPF event plus front-half timing marks captured before normalization.
 type Sample struct {
 	Event          Event
-	RingbufReadNS  int64
-	RawSendStartNS int64
+	RingbufReadAt  time.Time
+	RawSendStartAt time.Time
 }
 
 // Loader owns the lifecycle of the eBPF collection, links, and ring buffer reader.
@@ -90,10 +90,11 @@ func (l *Loader) ReadEvents(out chan<- Sample) error {
 			continue
 		}
 
+		now := time.Now()
 		sample := Sample{
 			Event:          e,
-			RingbufReadNS:  time.Now().UnixNano(),
-			RawSendStartNS: time.Now().UnixNano(),
+			RingbufReadAt:  now,
+			RawSendStartAt: now,
 		}
 		out <- sample
 	}

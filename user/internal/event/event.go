@@ -28,14 +28,14 @@ func (t EventType) String() string {
 	}
 }
 
-// LatencyDebug stores the front-half user-space timing marks for one accepted event.
+// LatencyDebug stores front-half user-space timing marks for one accepted event.
 type LatencyDebug struct {
-	RingbufReadNS    int64
-	RawSendStartNS   int64
-	RawRecvNS        int64
-	NormalizeDoneNS  int64
-	EventSendStartNS int64
-	EventSendDoneNS  int64
+	RingbufReadAt    time.Time
+	RawSendStartAt   time.Time
+	RawRecvAt        time.Time
+	NormalizeDoneAt  time.Time
+	EventSendStartAt time.Time
+	EventSendDoneAt  time.Time
 }
 
 // Event is the shared user-space representation after raw eBPF events are normalized.

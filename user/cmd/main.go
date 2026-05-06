@@ -110,11 +110,11 @@ func main() {
 
 		for sample := range rawEvents {
 			evt := ebpf.ToEvent(sample.Event)
-			evt.Latency.RingbufReadNS = sample.RingbufReadNS
-			evt.Latency.RawSendStartNS = sample.RawSendStartNS
-			evt.Latency.RawRecvNS = time.Now().UnixNano()
-			evt.Latency.NormalizeDoneNS = time.Now().UnixNano()
-			evt.Latency.EventSendStartNS = time.Now().UnixNano()
+			evt.Latency.RingbufReadAt = sample.RingbufReadAt
+			evt.Latency.RawSendStartAt = sample.RawSendStartAt
+			evt.Latency.RawRecvAt = time.Now()
+			evt.Latency.NormalizeDoneAt = time.Now()
+			evt.Latency.EventSendStartAt = time.Now()
 			events <- evt
 		}
 	}()
