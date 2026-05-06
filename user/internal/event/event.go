@@ -28,6 +28,19 @@ func (t EventType) String() string {
 	}
 }
 
+// LatencyDebug stores user-space timing marks for one accepted event.
+type LatencyDebug struct {
+	NormalizedAtNS       int64
+	NormalizeSendStartNS int64
+	NormalizeSendDoneNS  int64
+	PipelineRecvNS       int64
+	GatePassedNS         int64
+	ContextAppliedNS     int64
+	DecisionDoneNS       int64
+	AuditCallNS          int64
+	MonitorLockedNS      int64
+}
+
 // Event is the shared user-space representation after raw eBPF events are normalized.
 type Event struct {
 	PID  uint32 // This is TGID (Process ID)
@@ -35,9 +48,9 @@ type Event struct {
 	PPID uint32
 	UID  uint32
 
-	Comm string
-	Path string
-	Args []string
+	Comm  string
+	Path  string
+	Args  []string
 	Flags uint32
 	Mode  uint32
 
@@ -48,5 +61,6 @@ type Event struct {
 	Time      time.Time
 	TimeHuman string
 
-	Type EventType
+	Latency LatencyDebug
+	Type    EventType
 }

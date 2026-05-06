@@ -220,25 +220,24 @@ func (m *Monitor) Record(e event.Event, raw *context.SessionSnapshot, result *de
 		return errors.New("audit monitor is closed")
 	}
 
-	diag.EventStagef("monitor_record_locked", e, "has_raw=%t has_result=%t", raw != nil, result != nil)
+	e.Latency.MonitorLockedNS = time.Now().UnixNano()
 	if err := writeJSONL(m.eventFile, buildEventLogRecord(e), "event log"); err != nil {
 		m.writerErr = err
 		return err
 	}
-	diag.EventStagef("event_log_written", e, "has_latency_trace=%t", m.latencyFile != nil)
+	loggedAt := time.Now()
 	if m.latencyFile != nil {
-		loggedAt := time.Now()
 		if err := writeJSONL(m.latencyFile, buildLatencyTraceRecord(e, loggedAt), "latency trace"); err != nil {
 			m.writerErr = err
 			return err
 		}
-		diag.EventStagef("latency_trace_written", e, "logged_at_ns=%d internal_latency_ms=%.3f", loggedAt.UnixNano(), float64(loggedAt.UnixNano()-e.Time.UnixNano())/1_000_000)
 	}
 
 	if raw == nil || result == nil {
-		diag.EventStagef("monitor_record_done", e, "raw_or_result_missing=true")
 		return nil
 	}
+
+	diag.LogInternalLatency(e, raw.ID, loggedAt)
 
 	session := m.getOrCreateSessionLocked(raw.ID, e.Time)
 	m.rawSessions[raw.ID] = *raw
@@ -248,7 +247,6 @@ func (m *Monitor) Record(e event.Event, raw *context.SessionSnapshot, result *de
 			m.writerErr = err
 			return err
 		}
-		diag.EventStagef("audit_log_written", e, "session=%d score=%d threshold=%d", raw.ID, result.Score, result.LogThreshold)
 	}
 
 	if len(result.Triggered) > 0 && result.CrossesAlertThreshold() {
@@ -256,10 +254,8 @@ func (m *Monitor) Record(e event.Event, raw *context.SessionSnapshot, result *de
 			m.writerErr = err
 			return err
 		}
-		diag.EventStagef("alert_log_written", e, "session=%d score=%d threshold=%d", raw.ID, result.Score, result.AlertThreshold)
 	}
 
-	diag.EventStagef("monitor_record_done", e, "session=%d score=%d triggered=%d", raw.ID, result.Score, len(result.Triggered))
 	return nil
 }
 

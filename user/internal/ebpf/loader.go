@@ -4,9 +4,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
-	"time"
 
-	"github.com/cclts/casa/user/internal/diag"
 	"github.com/cilium/ebpf"
 	"github.com/cilium/ebpf/link"
 	"github.com/cilium/ebpf/ringbuf"
@@ -90,45 +88,7 @@ func (l *Loader) ReadEvents(out chan<- Event) error {
 			continue
 		}
 
-		if diag.Enabled() {
-			now := time.Now()
-			diag.Logf("[LATENCY DEBUG] stage=ringbuf_decoded ts=%s wall_ns=%d tgid=%d tid=%d ppid=%d raw_type=%d ktime_ns=%d sample_bytes=%d",
-				now.Format(time.RFC3339Nano),
-				now.UnixNano(),
-				e.Tgid,
-				e.Pid,
-				e.Ppid,
-				e.Type,
-				e.TsNS,
-				len(record.RawSample),
-			)
-			diag.Logf("[LATENCY DEBUG] stage=ringbuf_send_start ts=%s wall_ns=%d tgid=%d tid=%d ppid=%d raw_type=%d ktime_ns=%d raw_queue_len=%d",
-				now.Format(time.RFC3339Nano),
-				now.UnixNano(),
-				e.Tgid,
-				e.Pid,
-				e.Ppid,
-				e.Type,
-				e.TsNS,
-				len(out),
-			)
-		}
-
 		out <- e
-
-		if diag.Enabled() {
-			now := time.Now()
-			diag.Logf("[LATENCY DEBUG] stage=ringbuf_send_done ts=%s wall_ns=%d tgid=%d tid=%d ppid=%d raw_type=%d ktime_ns=%d raw_queue_len=%d",
-				now.Format(time.RFC3339Nano),
-				now.UnixNano(),
-				e.Tgid,
-				e.Pid,
-				e.Ppid,
-				e.Type,
-				e.TsNS,
-				len(out),
-			)
-		}
 	}
 }
 

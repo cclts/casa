@@ -14,7 +14,6 @@ import (
 	"github.com/cclts/casa/user/internal/audit"
 	"github.com/cclts/casa/user/internal/context"
 	"github.com/cclts/casa/user/internal/decision"
-	"github.com/cclts/casa/user/internal/diag"
 	"github.com/cclts/casa/user/internal/ebpf"
 	"github.com/cclts/casa/user/internal/event"
 	"github.com/cclts/casa/user/internal/pipeline"
@@ -110,25 +109,11 @@ func main() {
 		defer close(events)
 
 		for raw := range rawEvents {
-			if diag.Enabled() {
-				now := time.Now()
-				diag.Logf("[LATENCY DEBUG] stage=raw_event_dequeued ts=%s wall_ns=%d tgid=%d tid=%d ppid=%d raw_type=%d ktime_ns=%d raw_queue_len=%d",
-					now.Format(time.RFC3339Nano),
-					now.UnixNano(),
-					raw.Tgid,
-					raw.Pid,
-					raw.Ppid,
-					raw.Type,
-					raw.TsNS,
-					len(rawEvents),
-				)
-			}
-
 			evt := ebpf.ToEvent(raw)
-			diag.EventStagef("event_normalized", evt, "comm=%q path=%q addr=%q port=%d argc=%d", evt.Comm, evt.Path, evt.Addr, evt.Port, len(evt.Args))
-			diag.EventStagef("normalized_send_start", evt, "event_queue_len=%d", len(events))
+			evt.Latency.NormalizedAtNS = time.Now().UnixNano()
+			evt.Latency.NormalizeSendStartNS = time.Now().UnixNano()
 			events <- evt
-			diag.EventStagef("normalized_send_done", evt, "event_queue_len=%d", len(events))
+			evt.Latency.NormalizeSendDoneNS = time.Now().UnixNano()
 		}
 	}()
 

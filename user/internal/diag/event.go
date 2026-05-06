@@ -7,36 +7,48 @@ import (
 	"github.com/cclts/casa/user/internal/event"
 )
 
-func EventFields(e event.Event) string {
-	now := time.Now()
-	fields := fmt.Sprintf(
-		"ts=%s wall_ns=%d pid=%d tid=%d ppid=%d type=%s ktime_ns=%d",
-		now.Format(time.RFC3339Nano),
-		now.UnixNano(),
-		e.PID,
-		e.TID,
-		e.PPID,
-		e.Type.String(),
-		e.KTimeNS,
-	)
-	if !e.Time.IsZero() {
-		fields += fmt.Sprintf(
-			" event_time=%s event_ns=%d event_to_now_ms=%.3f",
-			e.Time.Format(time.RFC3339Nano),
-			e.Time.UnixNano(),
-			float64(now.UnixNano()-e.Time.UnixNano())/1_000_000,
-		)
+func msDelta(endNS, startNS int64) float64 {
+	if endNS <= 0 || startNS <= 0 || endNS < startNS {
+		return 0
 	}
-	return fields
+	return float64(endNS-startNS) / 1_000_000
 }
 
-func EventStagef(stage string, e event.Event, format string, args ...any) {
+func LogInternalLatency(e event.Event, sessionID uint32, loggedAt time.Time) {
 	if !Enabled() {
 		return
 	}
-	msg := ""
-	if format != "" {
-		msg = " " + fmt.Sprintf(format, args...)
+
+	loggedAtNS := loggedAt.UnixNano()
+	eventToLogMS := 0.0
+	kernelToNormalizeMS := 0.0
+	if !e.Time.IsZero() {
+		eventNS := e.Time.UnixNano()
+		eventToLogMS = msDelta(loggedAtNS, eventNS)
+		kernelToNormalizeMS = msDelta(e.Latency.NormalizedAtNS, eventNS)
 	}
-	Logf("[LATENCY DEBUG] stage=%s %s%s", stage, EventFields(e), msg)
+
+	Logf("[LATENCY INTERNAL] pid=%d tid=%d ppid=%d session=%d type=%s ktime_ns=%d event_to_log_ms=%.3f kernel_to_normalize_ms=%.3f normalize_ms=%.3f event_ch_block_ms=%.3f event_ch_wait_ms=%.3f gate_ms=%.3f context_ms=%.3f decision_ms=%.3f audit_wait_ms=%.3f write_ms=%.3f accepted_to_log_ms=%.3f",
+		e.PID,
+		e.TID,
+		e.PPID,
+		sessionID,
+		e.Type.String(),
+		e.KTimeNS,
+		eventToLogMS,
+		kernelToNormalizeMS,
+		msDelta(e.Latency.NormalizeSendStartNS, e.Latency.NormalizedAtNS),
+		msDelta(e.Latency.NormalizeSendDoneNS, e.Latency.NormalizeSendStartNS),
+		msDelta(e.Latency.PipelineRecvNS, e.Latency.NormalizeSendDoneNS),
+		msDelta(e.Latency.GatePassedNS, e.Latency.PipelineRecvNS),
+		msDelta(e.Latency.ContextAppliedNS, e.Latency.GatePassedNS),
+		msDelta(e.Latency.DecisionDoneNS, e.Latency.ContextAppliedNS),
+		msDelta(e.Latency.MonitorLockedNS, e.Latency.AuditCallNS),
+		msDelta(loggedAtNS, e.Latency.MonitorLockedNS),
+		msDelta(loggedAtNS, e.Latency.GatePassedNS),
+	)
+}
+
+func EventFields(e event.Event) string {
+	return fmt.Sprintf("pid=%d tid=%d ppid=%d type=%s ktime_ns=%d", e.PID, e.TID, e.PPID, e.Type.String(), e.KTimeNS)
 }
