@@ -18,8 +18,8 @@ type EventLogRecord struct {
 	Port      *uint16   `json:"port,omitempty"`
 }
 
-// LatencyTraceRecord stores internal event-to-log-write timing without
-// changing the user-facing events.log schema.
+// LatencyTraceRecord stores internal user-space timing from ringbuf read
+// to events.log write completion without changing the user-facing events.log schema.
 type LatencyTraceRecord struct {
 	Timestamp  string  `json:"timestamp"`
 	PID        uint32  `json:"pid"`

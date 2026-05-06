@@ -51,13 +51,16 @@ func buildEventRecord(e event.Event) EventRecord {
 
 func buildLatencyTraceRecord(e event.Event, loggedAt time.Time) LatencyTraceRecord {
 	loggedAtNs := loggedAt.UnixNano()
-	eventNs := e.Time.UnixNano()
+	latencyMs := 0.0
+	if !e.Latency.RingbufReadAt.IsZero() && !loggedAt.Before(e.Latency.RingbufReadAt) {
+		latencyMs = float64(loggedAt.Sub(e.Latency.RingbufReadAt)) / float64(time.Millisecond)
+	}
 	return LatencyTraceRecord{
 		Timestamp:  e.TimeHuman,
 		PID:        e.PID,
 		Type:       e.Type.String(),
 		LoggedAtNs: loggedAtNs,
-		LatencyMs:  float64(loggedAtNs-eventNs) / 1_000_000,
+		LatencyMs:  latencyMs,
 	}
 }
 

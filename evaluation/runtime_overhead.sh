@@ -44,7 +44,7 @@ What it measures:
   - CASA CPU%
   - CASA RSS
   - event-to-log-observation latency approximation
-  - internal event-to-log-write latency from CASA's latency trace
+  - internal user-space latency from ringbuf read to events.log write completion
 
 External observation latency:
   For each newly appended line in events.log, a Python observer records its own
@@ -52,9 +52,9 @@ External observation latency:
   This gives an end-to-end approximation from the event timestamp to the moment
   an external observer can read the appended events.log line.
 
-Internal log-write latency:
+Internal user-space latency:
   CASA can optionally write a separate latency trace that records the elapsed
-  time from the event timestamp to successful events.log write completion.
+  time from user-space ringbuf read to successful events.log write completion.
 
 Required:
   - CASA is already running
