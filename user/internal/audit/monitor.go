@@ -220,7 +220,6 @@ func (m *Monitor) Record(e event.Event, raw *context.SessionSnapshot, result *de
 		return errors.New("audit monitor is closed")
 	}
 
-	e.Latency.MonitorLockedNS = time.Now().UnixNano()
 	if err := writeJSONL(m.eventFile, buildEventLogRecord(e), "event log"); err != nil {
 		m.writerErr = err
 		return err

@@ -28,17 +28,14 @@ func (t EventType) String() string {
 	}
 }
 
-// LatencyDebug stores user-space timing marks for one accepted event.
+// LatencyDebug stores the front-half user-space timing marks for one accepted event.
 type LatencyDebug struct {
-	NormalizedAtNS       int64
-	NormalizeSendStartNS int64
-	NormalizeSendDoneNS  int64
-	PipelineRecvNS       int64
-	GatePassedNS         int64
-	ContextAppliedNS     int64
-	DecisionDoneNS       int64
-	AuditCallNS          int64
-	MonitorLockedNS      int64
+	RingbufReadNS    int64
+	RawSendStartNS   int64
+	RawRecvNS        int64
+	NormalizeDoneNS  int64
+	EventSendStartNS int64
+	EventSendDoneNS  int64
 }
 
 // Event is the shared user-space representation after raw eBPF events are normalized.

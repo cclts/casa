@@ -48,7 +48,8 @@ func Run(ctx stdcontext.Context, events <-chan event.Event, decisionEngine *deci
 	log.Println("bootstrap done")
 
 	for e := range events {
-		e.Latency.PipelineRecvNS = time.Now().UnixNano()
+		e.Latency.EventSendDoneNS = time.Now().UnixNano()
+		e.Latency.EventSendDoneNS = time.Now().UnixNano()
 
 		if e.Type == event.EventExecve {
 			tracker.Propagate(e.PID, e.PPID, isTransparentRoutineExec(e))
@@ -79,8 +80,6 @@ func Run(ctx stdcontext.Context, events <-chan event.Event, decisionEngine *deci
 			continue
 		}
 
-		e.Latency.GatePassedNS = time.Now().UnixNano()
-
 		var lineage process.Lineage
 		if e.Type == event.EventExecve {
 			securityStore.Ensure(e.PID)
@@ -90,11 +89,8 @@ func Run(ctx stdcontext.Context, events <-chan event.Event, decisionEngine *deci
 		contextManager.Observe(sess.ID, lineage, securityStore, e)
 		ctxSnapshot, ctxOK := contextManager.ApplyEvent(sess.ID, e)
 		if ctxOK {
-			e.Latency.ContextAppliedNS = time.Now().UnixNano()
 			if rawSession, rawOK := contextManager.SnapshotSessionByID(sess.ID); rawOK {
 				result := decisionEngine.Evaluate(ctxSnapshot)
-				e.Latency.DecisionDoneNS = time.Now().UnixNano()
-				e.Latency.AuditCallNS = time.Now().UnixNano()
 				if err := auditMonitor.Record(e, &rawSession, &result); err != nil {
 					log.Printf("Audit: write_failed err=%v", err)
 				}

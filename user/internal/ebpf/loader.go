@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
+	"time"
 
 	"github.com/cilium/ebpf"
 	"github.com/cilium/ebpf/link"
@@ -19,6 +20,13 @@ type bpfObjects struct {
 	ExitProg    *ebpf.Program `ebpf:"handle_exit"`
 }
 
+// Sample carries one raw eBPF event plus front-half timing marks captured before normalization.
+type Sample struct {
+	Event          Event
+	RingbufReadNS  int64
+	RawSendStartNS int64
+}
+
 // Loader owns the lifecycle of the eBPF collection, links, and ring buffer reader.
 type Loader struct {
 	objs  bpfObjects
@@ -26,7 +34,6 @@ type Loader struct {
 	links []link.Link
 }
 
-// Load opens the compiled object, loads maps/programs, and prepares the ring buffer reader.
 func Load(path string) (*Loader, error) {
 	spec, err := ebpf.LoadCollectionSpec(path)
 	if err != nil {
@@ -43,13 +50,9 @@ func Load(path string) (*Loader, error) {
 		return nil, err
 	}
 
-	return &Loader{
-		objs: objs,
-		rd:   rd,
-	}, nil
+	return &Loader{objs: objs, rd: rd}, nil
 }
 
-// Attach connects each probe program to the corresponding kernel tracepoint.
 func (l *Loader) Attach() error {
 	progs := []struct {
 		name string
@@ -75,8 +78,7 @@ func (l *Loader) Attach() error {
 	return nil
 }
 
-// ReadEvents continuously decodes ring buffer samples into strongly typed Go structs.
-func (l *Loader) ReadEvents(out chan<- Event) error {
+func (l *Loader) ReadEvents(out chan<- Sample) error {
 	for {
 		record, err := l.rd.Read()
 		if err != nil {
@@ -88,11 +90,15 @@ func (l *Loader) ReadEvents(out chan<- Event) error {
 			continue
 		}
 
-		out <- e
+		sample := Sample{
+			Event:          e,
+			RingbufReadNS:  time.Now().UnixNano(),
+			RawSendStartNS: time.Now().UnixNano(),
+		}
+		out <- sample
 	}
 }
 
-// Close tears down tracepoint links, the ring buffer reader, and loaded eBPF objects.
 func (l *Loader) Close() {
 	for _, link := range l.links {
 		if link != nil {

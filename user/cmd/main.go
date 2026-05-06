@@ -88,7 +88,7 @@ func main() {
 		log.Fatalf("attach eBPF probes: %v", err)
 	}
 
-	rawEvents := make(chan ebpf.Event, cfg.BufSize)
+	rawEvents := make(chan ebpf.Sample, cfg.BufSize)
 	events := make(chan event.Event, cfg.BufSize)
 
 	var wg sync.WaitGroup
@@ -108,12 +108,14 @@ func main() {
 		defer wg.Done()
 		defer close(events)
 
-		for raw := range rawEvents {
-			evt := ebpf.ToEvent(raw)
-			evt.Latency.NormalizedAtNS = time.Now().UnixNano()
-			evt.Latency.NormalizeSendStartNS = time.Now().UnixNano()
+		for sample := range rawEvents {
+			evt := ebpf.ToEvent(sample.Event)
+			evt.Latency.RingbufReadNS = sample.RingbufReadNS
+			evt.Latency.RawSendStartNS = sample.RawSendStartNS
+			evt.Latency.RawRecvNS = time.Now().UnixNano()
+			evt.Latency.NormalizeDoneNS = time.Now().UnixNano()
+			evt.Latency.EventSendStartNS = time.Now().UnixNano()
 			events <- evt
-			evt.Latency.NormalizeSendDoneNS = time.Now().UnixNano()
 		}
 	}()
 
