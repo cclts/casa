@@ -1,4 +1,4 @@
-# CASA
+# CASA: Context-aware Security Pipeline for Personal AI Agents
 
 CASA monitors the `openclaw-gateway` process tree, derives session-level context from accepted events, and evaluates weighted CEL rules to produce `audit.log` and `alert.log`.
 
