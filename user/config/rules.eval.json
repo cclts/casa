@@ -23,14 +23,17 @@
       "/run/secrets/",
       "/var/lib/kubelet/",
       "/var/lib/docker/",
-      "/var/lib/containerd/",
-      "/home/ubuntu/Desktop/casa/evaluation/fake_fs/"
+      "/var/lib/containerd/"
     ],
     "sensitive_path_patterns": [
       "/etc/shadow",
       "/etc/sudoers",
       "/.config/openclaw/",
-      "/shadow"
+      "/shadow",
+      "/evaluation/fake_fs/casefiles/alpha/briefing.txt",
+      "/evaluation/fake_fs/casefiles/beta/roster.txt",
+      "/evaluation/fake_fs/casefiles/gamma/ledger.txt",
+      "/evaluation/fake_fs/configs/app/session-notes.txt"
     ],
     "shell_names": [
       "sh",
@@ -87,8 +90,7 @@
     "allowed_loopback_ports": [
       18000
     ],
-    "ignored_connect_ips": [
-    ],
+    "ignored_connect_ips": [],
     "configured_connect_refresh_seconds": 300
   },
   "thresholds": {

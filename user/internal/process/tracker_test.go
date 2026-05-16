@@ -31,6 +31,24 @@ func TestTrackerPropagateAndRemove(t *testing.T) {
 	}
 }
 
+func TestTrackerSetTransparentUpdatesVisibleLineage(t *testing.T) {
+	tracker := NewTracker()
+	tracker.Add(10, 1, 0, false)
+	tracker.AddRoot(10)
+	tracker.Add(20, 10, 1, false)
+	tracker.Add(30, 20, 2, false)
+
+	tracker.SetTransparent(20, true)
+
+	lineage := BuildLineage(30, tracker, 4)
+	if len(lineage.Nodes) != 2 {
+		t.Fatalf("expected 2 visible lineage nodes, got %d", len(lineage.Nodes))
+	}
+	if lineage.Nodes[0].PID != 30 || lineage.Nodes[1].PID != 10 {
+		t.Fatalf("unexpected lineage nodes after transparency update: %+v", lineage.Nodes)
+	}
+}
+
 func TestBuildLineageSkipsTransparentNodes(t *testing.T) {
 	tracker := NewTracker()
 	tracker.Add(10, 1, 0, false)

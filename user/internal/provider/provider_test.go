@@ -86,6 +86,36 @@ func TestShouldIgnoreConfiguredConnectMatchesRootDepthOnly(t *testing.T) {
 	}
 }
 
+func TestShouldIgnoreConfiguredConnectAllowsOpenClawRuntimeChildren(t *testing.T) {
+	cfg := Config{Targets: []Target{{Host: "api.openai.com", Port: 443}}}
+	endpoints, err := ResolveConfig(stdcontext.Background(), stubResolver{
+		hosts: map[string][]net.IP{
+			"api.openai.com": {net.ParseIP("142.250.26.95")},
+		},
+	}, cfg)
+	if err != nil {
+		t.Fatalf("resolve targets: %v", err)
+	}
+
+	classifier := NewClassifier(endpoints)
+	tracker := process.NewTracker()
+	tracker.Add(220536, 1487, 0, false)
+	tracker.AddRoot(220536)
+	tracker.Add(303060, 220536, 1, false)
+
+	connect := event.Event{
+		Type: event.EventConnect,
+		PID:  303060,
+		PPID: 220536,
+		Comm: "openclaw-gateway",
+		Addr: "142.250.26.95",
+		Port: 443,
+	}
+	if !classifier.ShouldIgnoreConfiguredConnect(connect, tracker) {
+		t.Fatalf("expected configured connect from openclaw runtime child to be ignored")
+	}
+}
+
 func TestBackgroundRefreshReplacesEndpoints(t *testing.T) {
 	cfg := Config{Targets: []Target{{Host: "api.openai.com", Port: 443}}}
 	classifier := NewClassifier(EndpointSet{})

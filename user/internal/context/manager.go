@@ -69,6 +69,23 @@ func (m *Manager) Observe(
 	appendRecentEvent(session, e, m.recentEventLimit)
 }
 
+// PruneTransparentShellWrapper removes a pure shell wrapper from raw session state
+// while keeping the child exec event itself eligible for ingestion.
+func (m *Manager) PruneTransparentShellWrapper(sessionID process.SessionID, shellPID uint32) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	session, ok := m.sessions[sessionID]
+	if !ok {
+		return false
+	}
+	if !pruneTransparentShellWrapper(m.suppressedShells, sessionID, session, shellPID) {
+		return false
+	}
+	m.dirtyContexts[sessionID] = struct{}{}
+	return true
+}
+
 // ObserveIgnored lets the manager normalize known session-level noise patterns
 // even when the event itself should not be ingested into raw session state.
 func (m *Manager) ObserveIgnored(sessionID process.SessionID, e event.Event) bool {

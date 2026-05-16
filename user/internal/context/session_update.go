@@ -68,6 +68,9 @@ func applyExitToProcess(procState *ProcessState, e event.Event) {
 	if procState == nil {
 		return
 	}
+	if e.PID != e.TID {
+		return
+	}
 	procState.ExitTime = e.Time
 }
 

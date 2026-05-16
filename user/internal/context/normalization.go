@@ -18,7 +18,7 @@ func normalizeIgnoredEvent(suppressed map[process.SessionID]map[uint32]struct{},
 		if !isTransparentRoutineExecEvent(e) {
 			return false
 		}
-		return pruneTransparentRoutineShell(suppressed, sessionID, session, e.PPID)
+		return pruneTransparentRoutineShell(suppressed, sessionID, session, e.PPID, e.PID)
 	case event.EventExit:
 		shells := suppressed[sessionID]
 		if shells == nil {
@@ -37,13 +37,23 @@ func normalizeIgnoredEvent(suppressed map[process.SessionID]map[uint32]struct{},
 	}
 }
 
-func pruneTransparentRoutineShell(suppressed map[process.SessionID]map[uint32]struct{}, sessionID process.SessionID, session *SessionState, shellPID uint32) bool {
+func pruneTransparentRoutineShell(suppressed map[process.SessionID]map[uint32]struct{}, sessionID process.SessionID, session *SessionState, shellPID uint32, childPID uint32) bool {
+	if !pruneTransparentShellWrapper(suppressed, sessionID, session, shellPID) {
+		return false
+	}
+	if childPID != 0 {
+		suppressed[sessionID][childPID] = struct{}{}
+	}
+	return true
+}
+
+func pruneTransparentShellWrapper(suppressed map[process.SessionID]map[uint32]struct{}, sessionID process.SessionID, session *SessionState, shellPID uint32) bool {
 	if session == nil {
 		return false
 	}
 
 	procState := session.Processes[shellPID]
-	if procState == nil || !isRoutineShellProcess(procState) {
+	if !isTransparentShellWrapperProcess(procState) {
 		return false
 	}
 
@@ -65,14 +75,25 @@ func pruneTransparentRoutineShell(suppressed map[process.SessionID]map[uint32]st
 	return true
 }
 
-func isRoutineShellProcess(procState *ProcessState) bool {
+func isTransparentShellWrapperProcess(procState *ProcessState) bool {
 	if procState == nil {
 		return false
 	}
-	if len(procState.Opens) != 0 || len(procState.Connects) != 0 {
+	if len(procState.Connects) != 0 {
 		return false
 	}
+	if !isShellProcess(procState) {
+		return false
+	}
+	for _, open := range procState.Opens {
+		if !shouldIgnoreBurstOpen(ObservedEvent{Type: event.EventOpenat, PID: procState.PID, Path: open.Path, Flags: open.Flags, Mode: open.Mode, Time: open.Time}) {
+			return false
+		}
+	}
+	return true
+}
 
+func isShellProcess(procState *ProcessState) bool {
 	name := strings.TrimSpace(procState.Comm)
 	if name == "" && procState.ExecPath != "" {
 		name = filepath.Base(strings.TrimSpace(procState.ExecPath))

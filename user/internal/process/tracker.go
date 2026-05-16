@@ -60,6 +60,19 @@ func (t *Tracker) Exists(pid uint32) bool {
 	return ok
 }
 
+// SetTransparent updates whether a tracked pid should be skipped in visible lineage.
+func (t *Tracker) SetTransparent(pid uint32, transparent bool) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	info, ok := t.tracked[pid]
+	if !ok {
+		return
+	}
+	info.Transparent = transparent
+	t.tracked[pid] = info
+}
+
 // GetInfo returns cached process metadata if present.
 func (t *Tracker) GetInfo(pid uint32) (TrackedInfo, bool) {
 	t.mu.RLock()

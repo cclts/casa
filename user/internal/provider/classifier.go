@@ -1,6 +1,7 @@
 package provider
 
 import (
+	"strings"
 	"sync"
 
 	"github.com/cclts/casa/user/internal/event"
@@ -29,15 +30,19 @@ func (c *Classifier) ShouldIgnoreConfiguredConnect(e event.Event, tracker *proce
 
 	info, ok := tracker.GetInfo(e.PID)
 	if ok {
-		return info.Depth == 0
+		return info.Depth == 0 || isOpenClawRuntimeComm(e.Comm)
 	}
 
 	parent, ok := tracker.GetInfo(e.PPID)
 	if ok {
-		return parent.Depth == 0
+		return parent.Depth == 0 || isOpenClawRuntimeComm(e.Comm)
 	}
 
 	return false
+}
+
+func isOpenClawRuntimeComm(comm string) bool {
+	return strings.Contains(strings.ToLower(strings.TrimSpace(comm)), "openclaw")
 }
 
 func (c *Classifier) ReplaceEndpoints(endpoints EndpointSet) {

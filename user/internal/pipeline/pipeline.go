@@ -59,7 +59,7 @@ func Run(ctx stdcontext.Context, events <-chan event.Event, decisionEngine *deci
 		}
 
 		if !tracker.Exists(e.PID) && !tracker.Exists(e.PPID) {
-			if e.Type == event.EventExit {
+			if e.Type == event.EventExit && e.PID == e.TID {
 				tracker.Remove(e.PID)
 			}
 			continue
@@ -67,14 +67,14 @@ func Run(ctx stdcontext.Context, events <-chan event.Event, decisionEngine *deci
 
 		sess, ok := sessionTracker.ActiveSession(e.Time)
 		if !ok {
-			if e.Type == event.EventExit {
+			if e.Type == event.EventExit && e.PID == e.TID {
 				tracker.Remove(e.PID)
 			}
 			continue
 		}
 
 		if shouldIgnoreSecurityPipelineEvent(e, sess.ID, contextManager, tracker, providerClassifier) {
-			if e.Type == event.EventExit {
+			if e.Type == event.EventExit && e.PID == e.TID {
 				tracker.Remove(e.PID)
 			}
 			continue
@@ -82,6 +82,9 @@ func Run(ctx stdcontext.Context, events <-chan event.Event, decisionEngine *deci
 
 		var lineage process.Lineage
 		if e.Type == event.EventExecve {
+			if !isTransparentRoutineExec(e) && contextManager.PruneTransparentShellWrapper(sess.ID, e.PPID) {
+				tracker.SetTransparent(e.PPID, true)
+			}
 			securityStore.Ensure(e.PID)
 			lineage = process.BuildLineage(e.PID, tracker, decisionEngine.LineageMaxDepth())
 		}
@@ -97,7 +100,7 @@ func Run(ctx stdcontext.Context, events <-chan event.Event, decisionEngine *deci
 			}
 		}
 
-		if e.Type == event.EventExit {
+		if e.Type == event.EventExit && e.PID == e.TID {
 			tracker.Remove(e.PID)
 		}
 	}

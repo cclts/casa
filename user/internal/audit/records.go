@@ -6,6 +6,7 @@ import "github.com/cclts/casa/user/internal/decision"
 type EventLogRecord struct {
 	Timestamp string    `json:"timestamp"`
 	PID       uint32    `json:"pid"`
+	TID       uint32    `json:"tid"`
 	PPID      uint32    `json:"ppid"`
 	UID       uint32    `json:"uid"`
 	Type      string    `json:"type"`
@@ -48,6 +49,7 @@ type RecentEventRecord struct {
 	Timestamp string  `json:"timestamp"`
 	Type      string  `json:"type"`
 	PID       uint32  `json:"pid"`
+	TID       uint32  `json:"tid,omitempty"`
 	Path      *string `json:"path,omitempty"`
 	Flags     *uint32 `json:"flags,omitempty"`
 	Mode      *uint32 `json:"mode,omitempty"`
@@ -59,6 +61,7 @@ type RecentEventRecord struct {
 type EventRecord struct {
 	Type  string    `json:"type"`
 	PID   uint32    `json:"pid"`
+	TID   uint32    `json:"tid"`
 	PPID  uint32    `json:"ppid"`
 	UID   uint32    `json:"uid"`
 	Comm  string    `json:"comm"`

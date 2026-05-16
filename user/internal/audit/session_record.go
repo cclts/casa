@@ -64,6 +64,7 @@ func convertRecentEvents(items []context.ObservedEvent) []RecentEventRecord {
 			Timestamp: formatTimestamp(item.Time),
 			Type:      item.Type.String(),
 			PID:       item.PID,
+			TID:       item.TID,
 		}
 		switch item.Type.String() {
 		case "EXECVE":

@@ -135,6 +135,19 @@ func TestApplyEventUpdatesExecCapabilityAndHistoryAggregates(t *testing.T) {
 	_ = securityStore
 }
 
+func TestApplyExitToProcessIgnoresNonLeaderThreadExit(t *testing.T) {
+	now := time.Now()
+	procState := &ProcessState{PID: 100}
+	applyExitToProcess(procState, event.Event{Type: event.EventExit, PID: 100, TID: 101, Time: now})
+	if !procState.ExitTime.IsZero() {
+		t.Fatalf("expected non-leader thread exit not to mark process exit")
+	}
+	applyExitToProcess(procState, event.Event{Type: event.EventExit, PID: 100, TID: 100, Time: now})
+	if procState.ExitTime.IsZero() {
+		t.Fatalf("expected leader exit to mark process exit")
+	}
+}
+
 func TestApplyEventOpenOnlyUpdatesHistoryAggregate(t *testing.T) {
 	now := time.Now()
 	manager := NewManager()
@@ -207,6 +220,84 @@ func TestPruneTransparentRoutineShellRemovesShellArtifacts(t *testing.T) {
 	}
 	if len(raw.RecentEvents) != 0 {
 		t.Fatalf("expected shell recent events to be removed from raw session")
+	}
+}
+
+func TestTransparentRoutineChildExitIsSuppressedAfterShellPrune(t *testing.T) {
+	now := time.Now()
+	manager := NewManager()
+	sessionID := process.SessionID(90)
+	manager.sessions[sessionID] = &SessionState{
+		ID: uint32(sessionID),
+		Processes: map[uint32]*ProcessState{
+			100: {
+				PID:      100,
+				Comm:     "sh",
+				ExecPath: "/bin/sh",
+			},
+		},
+		RecentEvents: []ObservedEvent{
+			{Type: event.EventExecve, PID: 100, Path: "/bin/sh", Time: now},
+		},
+		CreatedAt: now,
+		UpdatedAt: now,
+	}
+
+	if !manager.ObserveIgnored(sessionID, event.Event{
+		Type: event.EventExecve,
+		PID:  200,
+		PPID: 100,
+		Path: "/usr/bin/ip",
+		Args: []string{"ip", "neigh", "show"},
+	}) {
+		t.Fatalf("expected transparent routine shell to be pruned")
+	}
+
+	if !manager.ObserveIgnored(sessionID, event.Event{
+		Type: event.EventExit,
+		PID:  200,
+	}) {
+		t.Fatalf("expected transparent routine child exit to be suppressed")
+	}
+}
+
+func TestPruneTransparentShellWrapperAllowsIgnorableOpens(t *testing.T) {
+	now := time.Now()
+	manager := NewManager()
+	sessionID := process.SessionID(91)
+	manager.sessions[sessionID] = &SessionState{
+		ID: uint32(sessionID),
+		Processes: map[uint32]*ProcessState{
+			100: {
+				PID:      100,
+				Comm:     "bash",
+				ExecPath: "/bin/bash",
+				Opens: []ObservedOpen{
+					{Path: "/dev/null", Flags: 577, Mode: 438, Time: now},
+				},
+			},
+		},
+		RecentEvents: []ObservedEvent{
+			{Type: event.EventExecve, PID: 100, Path: "/bin/bash", Time: now},
+			{Type: event.EventOpenat, PID: 100, Path: "/dev/null", Flags: 577, Mode: 438, Time: now},
+		},
+		CreatedAt: now,
+		UpdatedAt: now,
+	}
+
+	if !manager.PruneTransparentShellWrapper(sessionID, 100) {
+		t.Fatalf("expected bash wrapper with only ignorable opens to be pruned")
+	}
+
+	raw, ok := manager.SnapshotSessionByID(sessionID)
+	if !ok {
+		t.Fatalf("expected raw session to remain available")
+	}
+	if len(raw.Processes) != 0 {
+		t.Fatalf("expected shell wrapper process to be removed from raw session")
+	}
+	if len(raw.RecentEvents) != 0 {
+		t.Fatalf("expected shell wrapper recent events to be removed from raw session")
 	}
 }
 

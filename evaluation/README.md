@@ -9,7 +9,7 @@ Use this for the end-to-end prompt suite.
 ```bash
 CASA_RULES_PATH=user/config/rules.eval.json make run
 ```
-`user/config/rules.eval.json` adds the fake evaluation file system paths to sensitive path prefixes, and excludes the local fake sink server from local loopback filter. This is important because CASA derives network-related context from observed connect events. During evaluation, OpenClaw may communicate with LLM providers, local sink servers, or configured channels. These connections are not part of the security behavior being tested and should be filtered out.
+`user/config/rules.eval.json` marks only the evaluation fake files that are meant to behave as sensitive (`casefiles/*` and `configs/app/session-notes.txt`) and excludes the local fake sink server from local loopback filter. The `public/` files under `evaluation/fake_fs` remain non-sensitive. This is important because CASA derives network-related context from observed connect events. During evaluation, OpenClaw may communicate with LLM providers, local sink servers, or configured channels. These connections are not part of the security behavior being tested and should be filtered out.
 
 2. Start the local sink server:
 

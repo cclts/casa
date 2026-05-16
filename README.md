@@ -1,17 +1,20 @@
-# CASA: Context-aware Security Pipeline for Personal AI Agents
+# CASA: A Context-Aware Security Pipeline for Personal AI Agents
 
-CASA monitors the `openclaw-gateway` process tree, derives session-level context from accepted events, and evaluates weighted CEL rules to produce `audit.log` and `alert.log`.
+CASA monitors AI agent runtime behavior at the OS level, using eBPF to
+capture system events, grouping them into sessions, and evaluating
+weighted rules over derived context to detect multi-step attack patterns
+such as connect→exec and write→exec.
 
-## ⚠️ Critical Requirement
+Built with Go, eBPF (C), and CEL. Targets OpenClaw as a representative
+personal-agent runtime.
 
-CASA is highly sensitive to **OpenClaw version** and **Linux kernel + eBPF toolchain**.
+<p align="center">
+  <img src="evaluation/poster.png">
+</p>
 
-If OpenClaw runtime behavior changes, CASA may lose:
+Full poster: [Research Poster (PDF)](evaluation/poster.pdf)
 
-- CLI session boundary detection
-- `openclaw-gateway` tree tracking
-- routine-noise filtering
-- expected child-process patterns
+## Requirements
 
 Validated baseline:
 
@@ -28,7 +31,7 @@ Go go1.24.0 linux/arm64
 Environment Ubuntu VM on VMware Fusion
 ```
 
-Before evaluation, verify:
+Before running, verify:
 
 ```bash
 openclaw --version
@@ -36,78 +39,118 @@ go version
 uname -r
 ```
 
-OpenClaw must already be:
+CASA currently targets the validated OpenClaw runtime listed. 
+Changes in OpenClaw execution behavior may affect session tracking
+and noise filtering heuristics.
 
-- installed
-- onboarded
-- configured with a working LLM provider and API key
+## Quick Start
 
-Without a working provider/API key, OpenClaw prompts may fail and CASA evaluation will not be meaningful.
-
-The bundled `user/config/rules.json` is only a baseline template. For a real evaluation environment, **you must configure at least:**
-
-- `analysis.llm_provider_urls`
-
-If your environment also includes non-security communication services, configure as needed:
-
-- `analysis.channel_urls`
-- `analysis.known_cidrs`
-
-## ❗ Quick Start
-
-1. Install OpenClaw and complete onboarding.
-2. Configure a working LLM provider/API key for OpenClaw.
-3. Run:
+1. Install OpenClaw and complete onboarding. 
+2. Configure a working LLM provider and API key.
+3. Run setup:
 
 ```bash
 ./setup.sh
 ```
 
-4. Verify:
-
-```bash
-openclaw --version
-go version
-```
-
-5. Build and run:
+4. Build and run:
 
 ```bash
 make
 make run
 ```
 
-Optional:
+To reload rules without restarting:
 
-- reload rules with `kill -HUP $(cat /var/run/casa.pid)`
-- configure `channel_urls` or `known_cidrs` if your evaluation environment has non-security network traffic that should be excluded from CASA network-derived rules
-- do not rely on the bundled `rules.json` unchanged; fill in `analysis.llm_provider_urls` for your actual provider
+```bash
+kill -HUP $(cat /var/run/casa.pid)
+```
 
+## Configuration
 
-## 📊 Evaluation
+Configuration lives in `user/config/rules.json`. The bundled file is a
+baseline template. Before running a real evaluation, configure at minimum:
 
-For evaluation usage and scripts, see the files under `evaluation/`.
+- `analysis.llm_provider_urls`: LLM API endpoints used by OpenClaw.
+  Required for provider filtering to work correctly.
+
+If your environment includes non-security network traffic:
+
+- `analysis.channel_urls`: communication endpoints that should not
+  affect network-derived rules
+- `analysis.known_cidrs`: known IP ranges not reliably covered by DNS
+
+CASA resolves configured URLs at startup and refreshes them periodically
+via `analysis.configured_connect_refresh_seconds`. `known_cidrs` is
+matched directly without DNS resolution.
+
+For evaluation, see `evaluation/README.md`.
 
 ## Logs
 
-- `events.log`
-  accepted events that entered session/context processing
-- `sessions.log`
-  raw session snapshots
-- `audit.log`
-  rule hits once total score reaches `thresholds.log`
-- `alert.log`
-  rule hits once total score reaches `thresholds.alert`
+| File | Contents |
+|------|----------|
+| `events.log` | Accepted events that entered session and context processing |
+| `sessions.log` | Session snapshots, written on `periodic_flush`, `session_closed`, and `shutdown` |
+| `audit.log` | Rule hits once cumulative score reaches `thresholds.log` |
+| `alert.log` | Rule hits once cumulative score reaches `thresholds.alert` |
 
-Current `sessions.log` reasons:
-
-- `periodic_flush`
-- `session_closed`
-- `shutdown`
+Example `alert.log` record:
+```json
+{
+  "timestamp": "2026-05-02T17:44:19.027509477-05:00",
+  "session_id": 25,
+  "event": {
+    "type": "EXECVE",
+    "pid": 356947,
+    "ppid": 338205,
+    "uid": 1000,
+    "comm": "bash",
+    "path": "/tmp/openclaw-eval/helper.sh",
+    "args": ["/tmp/openclaw-eval/helper.sh"]
+  },
+  "decision": {
+    "action": "ALERT",
+    "score": 9,
+    "log_threshold": 4,
+    "alert_threshold": 9,
+    "triggered_rules": [
+      {
+        "name": "write_then_exec_same_path",
+        "expr": "history.write_then_exec_same_path",
+        "weight": 5
+      },
+      {
+        "name": "write_then_exec_from_suspicious_path",
+        "expr": "history.write_then_exec_same_path && execution.suspicious_path_exec",
+        "weight": 4
+      }
+    ]
+  }
+}
+```
 
 ## Rule Configuration
 
-### Analysis Fields
+Rules are defined in `rules.json` and evaluated using CEL expressions
+over derived context fields. Each rule specifies:
+
+```text
+rules[].name
+rules[].description
+rules[].expr
+rules[].weight
+rules[].enabled
+```
+
+Score thresholds:
+
+```text
+thresholds.log
+thresholds.alert
+```
+
+Full list of analysis configuration fields:
 
 ```text
 analysis.lineage_max_depth
@@ -133,39 +176,9 @@ analysis.known_cidrs
 analysis.configured_connect_refresh_seconds
 ```
 
-### Configured Connect Ignore
-
-- `analysis.llm_provider_urls`
-  required for real evaluation; LLM API endpoints used by OpenClaw itself
-- `analysis.channel_urls`
-  optional non-security communication endpoints that should not affect network-derived rules
-- `analysis.known_cidrs`
-  optional known network ranges for services that are not reliably covered by DNS resolution or may use hard-coded IPs
-- `analysis.configured_connect_refresh_seconds`
-  periodic DNS refresh interval for configured URLs
-
-CASA resolves configured URLs at startup and can refresh them periodically. `known_cidrs` is matched directly without DNS.
-
-These settings are environment-specific. CASA supports them, but evaluation users should configure `channel_urls` and `known_cidrs` for their own environment.
-
-### Thresholds
-
-```text
-thresholds.log
-thresholds.alert
-```
-
-### Rule Fields
-
-```text
-rules[].name
-rules[].description
-rules[].expr
-rules[].weight
-rules[].enabled
-```
-
 ## Derived Context
+
+Context fields are available as CEL expressions in rule definitions.
 
 ### Execution
 

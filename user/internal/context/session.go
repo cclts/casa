@@ -62,6 +62,7 @@ type LineageNode struct {
 type ObservedEvent struct {
 	Type event.EventType
 	PID  uint32
+	TID  uint32
 
 	Path  string
 	Flags uint32

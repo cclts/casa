@@ -10,6 +10,7 @@ func buildEventLogRecord(e event.Event) EventLogRecord {
 	record := EventLogRecord{
 		Timestamp: e.TimeHuman,
 		PID:       e.PID,
+		TID:       e.TID,
 		PPID:      e.PPID,
 		UID:       e.UID,
 		Type:      e.Type.String(),
@@ -41,6 +42,7 @@ func buildEventRecord(e event.Event) EventRecord {
 	record := EventRecord{
 		Type: e.Type.String(),
 		PID:  e.PID,
+		TID:  e.TID,
 		PPID: e.PPID,
 		UID:  e.UID,
 		Comm: e.Comm,
