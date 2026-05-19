@@ -11,6 +11,7 @@ import (
 	"github.com/cclts/casa/user/internal/event"
 	"github.com/cclts/casa/user/internal/process"
 	"github.com/cclts/casa/user/internal/provider"
+	"github.com/cclts/casa/user/internal/telemetry"
 )
 
 // Run is the main user-space analysis loop.
@@ -23,12 +24,13 @@ import (
 //  5. only then do heavier enrichment such as security reads and exec lineage
 //  6. fold accepted events into raw session state
 //  7. derive session context, evaluate rules, and emit logs
-func Run(ctx stdcontext.Context, events <-chan event.Event, decisionEngine *decision.Engine, auditMonitor *audit.Monitor, providerClassifier *provider.Classifier) {
+func Run(ctx stdcontext.Context, events <-chan event.Event, decisionEngine *decision.Engine, auditMonitor *audit.Monitor, providerClassifier *provider.Classifier, traceManager *telemetry.Manager) {
 	tracker := process.NewTracker()
 	sessionTracker := process.NewSessionTracker()
 	securityStore := process.NewSecurityStore()
 	contextManager := context.NewManager()
 	sessionTracker.StartJanitor(ctx, 500*time.Millisecond, func(id process.SessionID, closedAt time.Time) {
+		traceManager.CloseSession(id, closedAt)
 		contextManager.CloseSession(id, closedAt)
 		rawSession, ok := contextManager.SnapshotSessionByID(id)
 		if !ok {
@@ -94,9 +96,17 @@ func Run(ctx stdcontext.Context, events <-chan event.Event, decisionEngine *deci
 		if ctxOK {
 			if rawSession, rawOK := contextManager.SnapshotSessionByID(sess.ID); rawOK {
 				result := decisionEngine.Evaluate(ctxSnapshot)
-				if err := auditMonitor.Record(e, &rawSession, &result); err != nil {
+				recordOutcome, err := auditMonitor.Record(e, &rawSession, &result)
+				if err != nil {
 					log.Printf("Audit: write_failed err=%v", err)
 				}
+				traceManager.RecordAnalysis(telemetry.AnalysisInput{
+					Session: sess,
+					Event:   e,
+					Context: ctxSnapshot,
+					Result:  result,
+					Audit:   recordOutcome,
+				})
 			}
 		}
 

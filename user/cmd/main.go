@@ -19,6 +19,7 @@ import (
 	"github.com/cclts/casa/user/internal/pipeline"
 	"github.com/cclts/casa/user/internal/provider"
 	"github.com/cclts/casa/user/internal/rules"
+	"github.com/cclts/casa/user/internal/telemetry"
 )
 
 type Config struct {
@@ -31,6 +32,7 @@ type Config struct {
 	BPFPath        string
 	PIDPath        string
 	BufSize        int
+	Telemetry      telemetry.Config
 }
 
 func main() {
@@ -57,6 +59,17 @@ func main() {
 	configureHeuristics(decisionEngine.AnalysisConfig())
 	pipeline.ConfigureFilters(decisionEngine.AnalysisConfig())
 	providerClassifier := configureConfiguredConnectClassifier(ctx, decisionEngine.AnalysisConfig())
+	traceManager, err := telemetry.NewManager(ctx, cfg.Telemetry)
+	if err != nil {
+		log.Fatalf("initialize telemetry: %v", err)
+	}
+	defer func() {
+		shutdownCtx, cancel := stdcontext.WithTimeout(stdcontext.Background(), 5*time.Second)
+		defer cancel()
+		if err := traceManager.Shutdown(shutdownCtx); err != nil {
+			log.Printf("telemetry shutdown failed: %v", err)
+		}
+	}()
 
 	stopReload := setupReload(decisionEngine, cfg.RulePath)
 	defer stopReload()
@@ -122,7 +135,7 @@ func main() {
 	pipelineDone := make(chan struct{})
 	go func() {
 		defer close(pipelineDone)
-		pipeline.Run(ctx, events, decisionEngine, auditMonitor, providerClassifier)
+		pipeline.Run(ctx, events, decisionEngine, auditMonitor, providerClassifier, traceManager)
 	}()
 
 	log.Println("CASA pipeline is running")
@@ -153,6 +166,7 @@ func loadConfig() Config {
 		BPFPath:        getenv("CASA_BPF_PATH", "ebpf/build/probes.o"),
 		PIDPath:        getenv("CASA_PID_PATH", "/var/run/casa.pid"),
 		BufSize:        500,
+		Telemetry:      telemetry.LoadConfig(),
 	}
 }
 

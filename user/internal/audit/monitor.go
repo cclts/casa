@@ -209,31 +209,33 @@ func (m *Monitor) Close() error {
 // Record always writes one tree-scoped event log entry. When raw and result are
 // present, it also writes thresholded audit/alert records and refreshes the
 // current session snapshot state used by lifecycle flushes.
-func (m *Monitor) Record(e event.Event, raw *context.SessionSnapshot, result *decision.Result) error {
+func (m *Monitor) Record(e event.Event, raw *context.SessionSnapshot, result *decision.Result) (RecordOutcome, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
+	outcome := RecordOutcome{}
+
 	if m.writerErr != nil {
-		return m.writerErr
+		return outcome, m.writerErr
 	}
 	if m.closed {
-		return errors.New("audit monitor is closed")
+		return outcome, errors.New("audit monitor is closed")
 	}
 
 	if err := writeJSONL(m.eventFile, buildEventLogRecord(e), "event log"); err != nil {
 		m.writerErr = err
-		return err
+		return outcome, err
 	}
 	loggedAt := time.Now()
 	if m.latencyFile != nil {
 		if err := writeJSONL(m.latencyFile, buildLatencyTraceRecord(e, loggedAt), "latency trace"); err != nil {
 			m.writerErr = err
-			return err
+			return outcome, err
 		}
 	}
 
 	if raw == nil || result == nil {
-		return nil
+		return outcome, nil
 	}
 
 	diag.LogInternalLatency(e, raw.ID, loggedAt)
@@ -244,18 +246,20 @@ func (m *Monitor) Record(e event.Event, raw *context.SessionSnapshot, result *de
 	if len(result.Triggered) > 0 && result.Score >= result.LogThreshold {
 		if err := m.writeFullRecordLocked(m.auditFile, "audit log", session, e, *result); err != nil {
 			m.writerErr = err
-			return err
+			return outcome, err
 		}
+		outcome.AuditEmitted = true
 	}
 
 	if len(result.Triggered) > 0 && result.CrossesAlertThreshold() {
 		if err := m.writeFullRecordLocked(m.alertFile, "alert log", session, e, *result); err != nil {
 			m.writerErr = err
-			return err
+			return outcome, err
 		}
+		outcome.AlertEmitted = true
 	}
 
-	return nil
+	return outcome, nil
 }
 
 // RecordSessionSnapshot writes one lifecycle-driven session snapshot.

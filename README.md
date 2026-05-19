@@ -84,6 +84,17 @@ CASA resolves configured URLs at startup and refreshes them periodically
 via `analysis.configured_connect_refresh_seconds`. `known_cidrs` is
 matched directly without DNS resolution.
 
+Optional OpenTelemetry export can be enabled by pointing CASA at an OTLP
+HTTP endpoint that Jaeger accepts:
+
+```bash
+export CASA_OTEL_EXPORTER_OTLP_ENDPOINT=localhost:4318
+export CASA_OTEL_SERVICE_NAME=casa
+```
+
+CASA will emit one root span per session, with child spans for accepted
+`EXECVE`, `OPENAT`, `CONNECT`, and `EXIT` events.
+
 For evaluation, see `evaluation/README.md`.
 
 ## Logs

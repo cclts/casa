@@ -100,3 +100,9 @@ type TriggeredRuleRecord struct {
 	Expr   string `json:"expr,omitempty"`
 	Weight int    `json:"weight,omitempty"`
 }
+
+// RecordOutcome reports which thresholded sinks wrote a record for one event.
+type RecordOutcome struct {
+	AuditEmitted bool
+	AlertEmitted bool
+}
