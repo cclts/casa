@@ -1,12 +1,14 @@
 package main
 
 import (
+	"bufio"
 	stdcontext "context"
 	"fmt"
 	"log"
 	"net"
 	"os"
 	"os/signal"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -156,6 +158,10 @@ func main() {
 }
 
 func loadConfig() Config {
+	if err := loadDotEnv(".env"); err != nil {
+		log.Printf("load .env skipped: %v", err)
+	}
+
 	return Config{
 		EventLogPath:   getenvFirst([]string{"CASA_EVENTS_LOG_PATH", "CASA_EVENTS_LOG"}, "user/logs/events.log"),
 		LatencyLogPath: getenvFirst([]string{"CASA_LATENCY_TRACE_PATH", "CASA_LATENCY_TRACE"}, ""),
@@ -168,6 +174,60 @@ func loadConfig() Config {
 		BufSize:        500,
 		Telemetry:      telemetry.LoadConfig(),
 	}
+}
+
+func loadDotEnv(path string) error {
+	file, err := os.Open(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	defer file.Close()
+
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		if strings.HasPrefix(line, "export ") {
+			line = strings.TrimSpace(strings.TrimPrefix(line, "export "))
+		}
+
+		key, value, ok := parseDotEnvLine(line)
+		if !ok {
+			continue
+		}
+		if _, exists := os.LookupEnv(key); exists {
+			continue
+		}
+		if err := os.Setenv(key, value); err != nil {
+			return err
+		}
+	}
+	return scanner.Err()
+}
+
+func parseDotEnvLine(line string) (key string, value string, ok bool) {
+	idx := strings.IndexRune(line, '=')
+	if idx <= 0 {
+		return "", "", false
+	}
+
+	key = strings.TrimSpace(line[:idx])
+	if key == "" {
+		return "", "", false
+	}
+
+	value = strings.TrimSpace(line[idx+1:])
+	if len(value) >= 2 {
+		if (value[0] == '"' && value[len(value)-1] == '"') || (value[0] == '\'' && value[len(value)-1] == '\'') {
+			value = value[1 : len(value)-1]
+		}
+	}
+	return key, value, true
 }
 
 func configureHeuristics(analysis rules.AnalysisConfig) {
