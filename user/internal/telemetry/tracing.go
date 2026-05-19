@@ -45,11 +45,11 @@ type sessionTrace struct {
 	execveCount    int
 	exitCount      int
 
-	ruleHitsTotal int
-	auditEmitted  bool
-	alertEmitted  bool
-	finalScore    int
-	finalAction   decision.Action
+	auditEmitted bool
+	alertEmitted bool
+	finalScore   int
+	finalAction  decision.Action
+	finalContext ctxpkg.ContextSnapshot
 }
 
 type AnalysisInput struct {
@@ -106,22 +106,21 @@ func (m *Manager) RecordAnalysis(input AnalysisInput) {
 
 	m.mu.Lock()
 	sessionTrace := m.getOrCreateSessionTraceLocked(input.Session)
-	sessionTrace.observe(input.Event, input.Result, input.Audit)
+	sessionTrace.observe(input.Event, input.Context, input.Result, input.Audit)
 	m.applySessionAttributesLocked(sessionTrace)
-	m.mu.Unlock()
-
-	m.recordEventSpan(sessionTrace, input.Event)
+	m.recordEventEventLocked(sessionTrace, input.Event)
 	if len(input.Result.Triggered) > 0 {
 		for _, rule := range input.Result.Triggered {
-			m.recordRuleMatchSpan(sessionTrace, input.Event, input.Context, input.Result, rule)
+			m.recordRuleMatchEventLocked(sessionTrace, input.Event, input.Context, input.Result, rule)
 		}
 	}
 	if input.Audit.AuditEmitted {
-		m.recordAuditSpan(sessionTrace, input.Event, input.Result)
+		m.recordAuditEventLocked(sessionTrace, input.Event, input.Result)
 	}
 	if input.Audit.AlertEmitted {
-		m.recordAlertSpan(sessionTrace, input.Event, input.Result)
+		m.recordAlertEventLocked(sessionTrace, input.Event, input.Result)
 	}
+	m.mu.Unlock()
 }
 
 // CloseSession ends the root span for one session.
@@ -202,7 +201,6 @@ func (m *Manager) applySessionAttributesLocked(sessionTrace *sessionTrace) {
 		attribute.String("casa.session.created_at", sessionTrace.createdAt.Format(time.RFC3339Nano)),
 		attribute.Int("casa.session.final_score", sessionTrace.finalScore),
 		attribute.String("casa.session.final_action", string(sessionTrace.finalAction)),
-		attribute.Int("casa.session.rule_hits_total", sessionTrace.ruleHitsTotal),
 		attribute.Bool("casa.session.audit_emitted", sessionTrace.auditEmitted),
 		attribute.Bool("casa.session.alert_emitted", sessionTrace.alertEmitted),
 		attribute.Int("casa.session.event_count.accepted", sessionTrace.acceptedEvents),
@@ -214,57 +212,46 @@ func (m *Manager) applySessionAttributesLocked(sessionTrace *sessionTrace) {
 	if !sessionTrace.closedAt.IsZero() {
 		attrs = append(attrs, attribute.String("casa.session.closed_at", sessionTrace.closedAt.Format(time.RFC3339Nano)))
 	}
+	attrs = append(attrs, sessionContextAttributes(sessionTrace.finalContext)...)
 	sessionTrace.span.SetAttributes(attrs...)
 }
 
-func (m *Manager) recordEventSpan(sessionTrace *sessionTrace, e event.Event) {
-	_, span := m.tracer.Start(
-		sessionTrace.ctx,
-		eventSpanName(e),
+func (m *Manager) recordEventEventLocked(sessionTrace *sessionTrace, e event.Event) {
+	sessionTrace.span.AddEvent(
+		eventName(e),
 		trace.WithTimestamp(e.Time),
 		trace.WithAttributes(eventAttributes(sessionTrace.id, e)...),
-		trace.WithSpanKind(trace.SpanKindInternal),
 	)
-	span.End(trace.WithTimestamp(e.Time))
 }
 
-func (m *Manager) recordRuleMatchSpan(sessionTrace *sessionTrace, e event.Event, snapshot ctxpkg.ContextSnapshot, result decision.Result, rule rules.TriggeredRule) {
+func (m *Manager) recordRuleMatchEventLocked(sessionTrace *sessionTrace, e event.Event, snapshot ctxpkg.ContextSnapshot, result decision.Result, rule rules.TriggeredRule) {
 	attrs := append(eventAttributes(sessionTrace.id, e), ruleMatchAttributes(snapshot, result, rule)...)
-	_, span := m.tracer.Start(
-		sessionTrace.ctx,
+	sessionTrace.span.AddEvent(
 		fmt.Sprintf("rule matched: %s", rule.Name),
 		trace.WithTimestamp(e.Time),
 		trace.WithAttributes(attrs...),
-		trace.WithSpanKind(trace.SpanKindInternal),
 	)
-	span.End(trace.WithTimestamp(e.Time))
 }
 
-func (m *Manager) recordAuditSpan(sessionTrace *sessionTrace, e event.Event, result decision.Result) {
+func (m *Manager) recordAuditEventLocked(sessionTrace *sessionTrace, e event.Event, result decision.Result) {
 	attrs := append(eventAttributes(sessionTrace.id, e), recordOutcomeAttributes("casa.audit", result)...)
-	_, span := m.tracer.Start(
-		sessionTrace.ctx,
+	sessionTrace.span.AddEvent(
 		"audit emitted",
 		trace.WithTimestamp(e.Time),
 		trace.WithAttributes(attrs...),
-		trace.WithSpanKind(trace.SpanKindInternal),
 	)
-	span.End(trace.WithTimestamp(e.Time))
 }
 
-func (m *Manager) recordAlertSpan(sessionTrace *sessionTrace, e event.Event, result decision.Result) {
+func (m *Manager) recordAlertEventLocked(sessionTrace *sessionTrace, e event.Event, result decision.Result) {
 	attrs := append(eventAttributes(sessionTrace.id, e), recordOutcomeAttributes("casa.alert", result)...)
-	_, span := m.tracer.Start(
-		sessionTrace.ctx,
+	sessionTrace.span.AddEvent(
 		"alert emitted",
 		trace.WithTimestamp(e.Time),
 		trace.WithAttributes(attrs...),
-		trace.WithSpanKind(trace.SpanKindInternal),
 	)
-	span.End(trace.WithTimestamp(e.Time))
 }
 
-func (s *sessionTrace) observe(e event.Event, result decision.Result, auditOutcome audit.RecordOutcome) {
+func (s *sessionTrace) observe(e event.Event, snapshot ctxpkg.ContextSnapshot, result decision.Result, auditOutcome audit.RecordOutcome) {
 	s.acceptedEvents++
 	switch e.Type {
 	case event.EventConnect:
@@ -276,9 +263,9 @@ func (s *sessionTrace) observe(e event.Event, result decision.Result, auditOutco
 	case event.EventExit:
 		s.exitCount++
 	}
-	s.ruleHitsTotal += len(result.Triggered)
 	s.finalScore = result.Score
 	s.finalAction = maxAction(s.finalAction, result.Action)
+	s.finalContext = snapshot
 	s.auditEmitted = s.auditEmitted || auditOutcome.AuditEmitted
 	s.alertEmitted = s.alertEmitted || auditOutcome.AlertEmitted
 }
@@ -303,18 +290,18 @@ func actionSeverity(action decision.Action) int {
 	}
 }
 
-func eventSpanName(e event.Event) string {
+func eventName(e event.Event) string {
 	switch e.Type {
 	case event.EventConnect:
-		return "event: connect remote host"
+		return "network"
 	case event.EventOpenat:
-		return "event: open file"
+		return "file"
 	case event.EventExecve:
-		return "event: exec process"
+		return "process"
 	case event.EventExit:
-		return "event: process exit"
+		return "exit"
 	default:
-		return "event: process event"
+		return "event"
 	}
 }
 
@@ -400,6 +387,29 @@ func recordOutcomeAttributes(prefix string, result decision.Result) []attribute.
 		attribute.Int("casa.decision.alert_threshold", result.AlertThreshold),
 		attribute.Int(prefix+".triggered_rule_count", len(result.Triggered)),
 		attribute.StringSlice(prefix+".triggered_rule_names", triggeredRuleNames(result.Triggered)),
+	}
+}
+
+func sessionContextAttributes(snapshot ctxpkg.ContextSnapshot) []attribute.KeyValue {
+	return []attribute.KeyValue{
+		attribute.Bool("casa.execution.suspicious_path_exec", snapshot.Execution.SuspiciousPathExec),
+		attribute.Bool("casa.execution.deep_chain", snapshot.Execution.DeepChain),
+		attribute.Bool("casa.execution.shell_in_chain", snapshot.Execution.ShellInChain),
+		attribute.Bool("casa.execution.network_tool_in_chain", snapshot.Execution.NetworkToolInChain),
+		attribute.Bool("casa.execution.interpreter_in_chain", snapshot.Execution.InterpreterInChain),
+		attribute.Bool("casa.execution.container_runtime_in_chain", snapshot.Execution.ContainerRuntimeInChain),
+		attribute.Bool("casa.execution.memfd_or_deleted_exec", snapshot.Execution.MemfdOrDeletedExec),
+		attribute.Bool("casa.capability.has_dangerous_caps", snapshot.Capability.HasDangerousCaps),
+		attribute.Int("casa.capability.dangerous_count", snapshot.Capability.DangerousCount),
+		attribute.Bool("casa.capability.seccomp_disabled", snapshot.Capability.SeccompDisabled),
+		attribute.Bool("casa.history.connect_then_exec", snapshot.History.ConnectThenExec),
+		attribute.Bool("casa.history.sensitive_then_network", snapshot.History.SensitiveThenNetwork),
+		attribute.Bool("casa.history.sensitive_then_execve", snapshot.History.SensitiveThenExecve),
+		attribute.Bool("casa.history.burst_open", snapshot.History.BurstOpen),
+		attribute.Bool("casa.history.burst_connect", snapshot.History.BurstConnect),
+		attribute.Bool("casa.history.burst_exec", snapshot.History.BurstExec),
+		attribute.Bool("casa.history.write_then_exec_same_path", snapshot.History.WriteThenExecSamePath),
+		attribute.Bool("casa.history.opened_deleted_path", snapshot.History.OpenedDeletedPath),
 	}
 }
 

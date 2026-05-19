@@ -12,21 +12,21 @@ import (
 	"github.com/cclts/casa/user/internal/rules"
 )
 
-func TestEventSpanName(t *testing.T) {
+func TestEventName(t *testing.T) {
 	cases := []struct {
 		eventType event.EventType
 		want      string
 	}{
-		{event.EventConnect, "event: connect remote host"},
-		{event.EventOpenat, "event: open file"},
-		{event.EventExecve, "event: exec process"},
-		{event.EventExit, "event: process exit"},
+		{event.EventConnect, "network"},
+		{event.EventOpenat, "file"},
+		{event.EventExecve, "process"},
+		{event.EventExit, "exit"},
 	}
 
 	for _, tc := range cases {
-		got := eventSpanName(event.Event{Type: tc.eventType})
+		got := eventName(event.Event{Type: tc.eventType})
 		if got != tc.want {
-			t.Fatalf("eventSpanName(%v) = %q, want %q", tc.eventType, got, tc.want)
+			t.Fatalf("eventName(%v) = %q, want %q", tc.eventType, got, tc.want)
 		}
 	}
 }
@@ -36,6 +36,9 @@ func TestSessionTraceObserveAccumulatesFinalState(t *testing.T) {
 
 	session.observe(
 		event.Event{Type: event.EventConnect},
+		ctxpkg.ContextSnapshot{
+			History: ctxpkg.HistoricalContext{ConnectThenExec: true},
+		},
 		decision.Result{
 			Score:     4,
 			Action:    decision.ActionLog,
@@ -45,6 +48,9 @@ func TestSessionTraceObserveAccumulatesFinalState(t *testing.T) {
 	)
 	session.observe(
 		event.Event{Type: event.EventExecve},
+		ctxpkg.ContextSnapshot{
+			Execution: ctxpkg.ExecutionChainContext{ShellInChain: true},
+		},
 		decision.Result{
 			Score:     9,
 			Action:    decision.ActionAlert,
@@ -59,9 +65,6 @@ func TestSessionTraceObserveAccumulatesFinalState(t *testing.T) {
 	if session.connectCount != 1 || session.execveCount != 1 {
 		t.Fatalf("unexpected event counters: connect=%d execve=%d", session.connectCount, session.execveCount)
 	}
-	if session.ruleHitsTotal != 3 {
-		t.Fatalf("ruleHitsTotal = %d, want 3", session.ruleHitsTotal)
-	}
 	if session.finalScore != 9 {
 		t.Fatalf("finalScore = %d, want 9", session.finalScore)
 	}
@@ -70,6 +73,9 @@ func TestSessionTraceObserveAccumulatesFinalState(t *testing.T) {
 	}
 	if !session.auditEmitted || !session.alertEmitted {
 		t.Fatalf("expected both audit and alert to be marked emitted")
+	}
+	if !session.finalContext.Execution.ShellInChain {
+		t.Fatalf("expected final context to track latest snapshot")
 	}
 }
 
@@ -105,6 +111,10 @@ func TestTriggeredRuleNamesAndRuleMatchAttributes(t *testing.T) {
 	attrs := ruleMatchAttributes(snapshot, result, result.Triggered[0])
 	if len(attrs) == 0 {
 		t.Fatalf("expected ruleMatchAttributes to include telemetry fields")
+	}
+	sessionAttrs := sessionContextAttributes(snapshot)
+	if len(sessionAttrs) == 0 {
+		t.Fatalf("expected sessionContextAttributes to include context fields")
 	}
 }
 
