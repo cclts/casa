@@ -24,6 +24,7 @@ func TestShouldIngestIntoContextFiltersRuntimeNoise(t *testing.T) {
 		{Type: event.EventOpenat, Path: "/etc/gnutls/config"},
 		{Type: event.EventOpenat, Path: "/var/lib/crypto-config/profiles/current/gnutls.conf"},
 		{Type: event.EventOpenat, Path: "/usr/lib/ssl/openssl.cnf"},
+		{Type: event.EventOpenat, Path: "/usr/lib/cargo/bin/coreutils/mkdir/en-US.ftl"},
 		{Type: event.EventOpenat, Path: "/tmp/openclaw/openclaw-2026-05-19.log"},
 	}
 

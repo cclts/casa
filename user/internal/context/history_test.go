@@ -279,6 +279,22 @@ func TestDetectBurstEventForOpenHonorsIgnoreList(t *testing.T) {
 
 	sessState = SessionSnapshot{
 		RecentEvents: []ObservedEvent{
+			{Type: event.EventOpenat, Path: "/usr/lib/cargo/bin/coreutils/mkdir/en-US.ftl", Time: now},
+			{Type: event.EventOpenat, Path: "/usr/lib/cargo/bin/coreutils/mkdir/en-US.ftl", Time: now.Add(200 * time.Millisecond)},
+			{Type: event.EventOpenat, Path: "/usr/lib/cargo/bin/coreutils/mkdir/en-US.ftl", Time: now.Add(400 * time.Millisecond)},
+		},
+	}
+	for _, evt := range sessState.RecentEvents {
+		if !shouldIgnoreBurstOpen(evt) {
+			t.Fatalf("expected coreutils locale open %q to be ignored by burst-open helper", evt.Path)
+		}
+	}
+	if detectBurstEvent(sessState, event.EventOpenat, 3) {
+		t.Fatalf("expected ignored coreutils locale opens not to trigger burst_open")
+	}
+
+	sessState = SessionSnapshot{
+		RecentEvents: []ObservedEvent{
 			{Type: event.EventOpenat, Path: "/tmp/a", Time: now},
 			{Type: event.EventOpenat, Path: "/tmp/b", Time: now.Add(200 * time.Millisecond)},
 			{Type: event.EventOpenat, Path: "/tmp/c", Time: now.Add(400 * time.Millisecond)},

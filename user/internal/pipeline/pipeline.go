@@ -77,6 +77,13 @@ func Run(ctx stdcontext.Context, events <-chan event.Event, decisionEngine *deci
 			continue
 		}
 
+		if rewritten, ok := pendingShells.RewriteParent(sess.ID, e); ok {
+			e = rewritten
+			if info, tracked := tracker.GetInfo(e.PID); tracked {
+				tracker.Add(e.PID, e.PPID, info.Depth, info.Transparent)
+			}
+		}
+
 		if pendingShells.PromoteIfMeaningful(sess.ID, e, tracker) {
 			// The shell has now shown security-relevant behavior. Keep later events
 			// visible, but do not synthesize its placeholder execve into context.
@@ -85,6 +92,12 @@ func Run(ctx stdcontext.Context, events <-chan event.Event, decisionEngine *deci
 		if isPendingShellExecve(e) {
 			pendingShells.Add(sess.ID, e)
 			tracker.SetTransparent(e.PID, true)
+			continue
+		}
+
+		if e.Type == event.EventExit && e.PID == e.TID && pendingShells.IsPending(sess.ID, e.PID) {
+			pendingShells.Remove(sess.ID, e.PID)
+			tracker.Remove(e.PID)
 			continue
 		}
 

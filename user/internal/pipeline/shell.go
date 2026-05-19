@@ -98,6 +98,38 @@ func (p *pendingShellWrappers) PromoteIfMeaningful(sessionID process.SessionID, 
 	return true
 }
 
+func (p *pendingShellWrappers) IsPending(sessionID process.SessionID, pid uint32) bool {
+	if p == nil {
+		return false
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	shells := p.items[sessionID]
+	if shells == nil {
+		return false
+	}
+	_, ok := shells[pid]
+	return ok
+}
+
+func (p *pendingShellWrappers) RewriteParent(sessionID process.SessionID, e event.Event) (event.Event, bool) {
+	if p == nil || e.PPID == 0 {
+		return e, false
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	shells := p.items[sessionID]
+	if shells == nil {
+		return e, false
+	}
+	shell, ok := shells[e.PPID]
+	if !ok {
+		return e, false
+	}
+	e.PPID = shell.PPID
+	return e, true
+}
+
 func isPendingShellExecve(e event.Event) bool {
 	if e.Type != event.EventExecve {
 		return false

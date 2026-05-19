@@ -96,6 +96,7 @@ func isRoutineSessionFileNoise(e event.Event) bool {
 		strings.HasSuffix(p, "/.env"),
 		strings.HasSuffix(p, "/.curlrc"),
 		strings.HasSuffix(p, "/.config/curlrc"),
+		strings.HasSuffix(p, "/en-us.ftl"),
 		strings.HasSuffix(p, "/etc/hosts"),
 		strings.HasSuffix(p, "/etc/nsswitch.conf"),
 		strings.HasSuffix(p, "/etc/passwd"),
@@ -105,6 +106,7 @@ func isRoutineSessionFileNoise(e event.Event) bool {
 		strings.HasSuffix(p, "/.bashrc"),
 		strings.HasSuffix(p, "/.profile"),
 		strings.Contains(p, "/tmp/openclaw/"),
+		strings.Contains(p, "/coreutils/mkdir/"),
 		strings.Contains(p, "/gconv/gconv-modules.cache"),
 		strings.Contains(p, "/etc/bash.bashrc"):
 		return true

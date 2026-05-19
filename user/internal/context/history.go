@@ -171,7 +171,9 @@ func shouldIgnoreBurstOpen(evt ObservedEvent) bool {
 	if strings.HasPrefix(p, "/lib/") ||
 		strings.HasPrefix(p, "/usr/lib/") ||
 		strings.HasPrefix(p, "/lib64/") {
-		return strings.Contains(p, ".so")
+		if strings.Contains(p, ".so") {
+			return true
+		}
 	}
 
 	if p == "/proc" || strings.HasPrefix(p, "/proc/") || p == "/sys" || strings.HasPrefix(p, "/sys/") {
@@ -209,6 +211,9 @@ func shouldIgnoreBurstOpen(evt ObservedEvent) bool {
 	}
 
 	if strings.Contains(p, "/tmp/openclaw/") {
+		return true
+	}
+	if strings.HasSuffix(strings.ToLower(p), ".ftl") {
 		return true
 	}
 

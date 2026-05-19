@@ -85,3 +85,55 @@ func TestPendingShellWrapperKeepsNoiseHidden(t *testing.T) {
 		t.Fatalf("expected routine open noise not to promote pending shell")
 	}
 }
+
+func TestPendingShellExitCanBeSuppressedWithoutPromotion(t *testing.T) {
+	pending := newPendingShellWrappers()
+	sessionID := process.SessionID(9)
+	now := time.Now()
+
+	pending.Add(sessionID, event.Event{
+		Type: event.EventExecve,
+		PID:  100,
+		PPID: 50,
+		Path: "/bin/sh",
+		Time: now,
+	})
+
+	if !pending.IsPending(sessionID, 100) {
+		t.Fatalf("expected shell to be pending before exit")
+	}
+
+	pending.Remove(sessionID, 100)
+
+	if pending.IsPending(sessionID, 100) {
+		t.Fatalf("expected shell to be removed after exit cleanup")
+	}
+}
+
+func TestPendingShellRewriteParentBridgesToGrandparent(t *testing.T) {
+	pending := newPendingShellWrappers()
+	sessionID := process.SessionID(10)
+	now := time.Now()
+
+	pending.Add(sessionID, event.Event{
+		Type: event.EventExecve,
+		PID:  41152,
+		PPID: 1570,
+		Path: "/bin/sh",
+		Time: now,
+	})
+
+	rewritten, ok := pending.RewriteParent(sessionID, event.Event{
+		Type: event.EventExecve,
+		PID:  41153,
+		PPID: 41152,
+		Path: "/usr/bin/chmod",
+		Time: now.Add(time.Second),
+	})
+	if !ok {
+		t.Fatalf("expected rewrite to occur for child of pending shell")
+	}
+	if rewritten.PPID != 1570 {
+		t.Fatalf("expected rewritten parent pid 1570, got %d", rewritten.PPID)
+	}
+}
