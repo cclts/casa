@@ -20,6 +20,14 @@ func (c Config) Enabled() bool {
 	return strings.TrimSpace(c.Endpoint) != ""
 }
 
+// Summary renders a log-friendly view of the active telemetry config.
+func (c Config) Summary() string {
+	if !c.Enabled() {
+		return "disabled"
+	}
+	return "endpoint=" + c.Endpoint + " service=" + c.ServiceName + " insecure=" + strconv.FormatBool(c.Insecure)
+}
+
 // LoadConfig reads telemetry settings from CASA-specific env vars first and
 // then falls back to standard OTEL env vars.
 func LoadConfig() Config {

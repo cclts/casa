@@ -3,6 +3,7 @@ package telemetry
 import (
 	stdcontext "context"
 	"fmt"
+	"log"
 	"strings"
 	"sync"
 	"time"
@@ -22,6 +23,8 @@ import (
 	semconv "go.opentelemetry.io/otel/semconv/v1.26.0"
 	"go.opentelemetry.io/otel/trace"
 )
+
+type logErrorHandler struct{}
 
 type Manager struct {
 	tracer   trace.Tracer
@@ -65,6 +68,8 @@ func NewManager(ctx stdcontext.Context, cfg Config) (*Manager, error) {
 	if !cfg.Enabled() {
 		return &Manager{}, nil
 	}
+
+	otel.SetErrorHandler(logErrorHandler{})
 
 	clientOptions := []otlptracehttp.Option{}
 	if strings.HasPrefix(cfg.Endpoint, "http://") || strings.HasPrefix(cfg.Endpoint, "https://") {
@@ -130,16 +135,18 @@ func (m *Manager) CloseSession(id process.SessionID, closedAt time.Time) {
 	}
 
 	m.mu.Lock()
-	defer m.mu.Unlock()
-
 	sessionTrace, ok := m.sessions[id]
 	if !ok {
+		m.mu.Unlock()
 		return
 	}
 	sessionTrace.closedAt = closedAt
 	m.applySessionAttributesLocked(sessionTrace)
 	sessionTrace.span.End(trace.WithTimestamp(closedAt))
 	delete(m.sessions, id)
+	m.mu.Unlock()
+
+	m.forceFlush("session close")
 }
 
 // Shutdown ends all active session spans and flushes the provider.
@@ -161,6 +168,9 @@ func (m *Manager) Shutdown(ctx stdcontext.Context) error {
 	}
 	m.mu.Unlock()
 
+	if err := m.provider.ForceFlush(ctx); err != nil {
+		log.Printf("telemetry force flush failed during shutdown: %v", err)
+	}
 	return m.provider.Shutdown(ctx)
 }
 
@@ -422,4 +432,22 @@ func triggeredRuleNames(items []rules.TriggeredRule) []string {
 		names = append(names, item.Name)
 	}
 	return names
+}
+
+func (m *Manager) forceFlush(reason string) {
+	if m == nil || m.provider == nil {
+		return
+	}
+	ctx, cancel := stdcontext.WithTimeout(stdcontext.Background(), 5*time.Second)
+	defer cancel()
+	if err := m.provider.ForceFlush(ctx); err != nil {
+		log.Printf("telemetry force flush failed after %s: %v", reason, err)
+	}
+}
+
+func (logErrorHandler) Handle(err error) {
+	if err == nil {
+		return
+	}
+	log.Printf("telemetry exporter error: %v", err)
 }

@@ -39,6 +39,7 @@ type Config struct {
 
 func main() {
 	cfg := loadConfig()
+	log.Printf("telemetry=%s", cfg.Telemetry.Summary())
 
 	ctx, stop := signal.NotifyContext(stdcontext.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
