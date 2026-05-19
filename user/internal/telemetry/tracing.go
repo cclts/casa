@@ -116,7 +116,7 @@ func (m *Manager) RecordAnalysis(input AnalysisInput) {
 	m.recordEventEventLocked(sessionTrace, input.Event)
 	if len(input.Result.Triggered) > 0 {
 		for _, rule := range input.Result.Triggered {
-			m.recordRuleMatchEventLocked(sessionTrace, input.Event, input.Context, input.Result, rule)
+			m.recordRuleMatchEventLocked(sessionTrace, input.Event, input.Result, rule)
 		}
 	}
 	if input.Audit.AuditEmitted {
@@ -234,8 +234,8 @@ func (m *Manager) recordEventEventLocked(sessionTrace *sessionTrace, e event.Eve
 	)
 }
 
-func (m *Manager) recordRuleMatchEventLocked(sessionTrace *sessionTrace, e event.Event, snapshot ctxpkg.ContextSnapshot, result decision.Result, rule rules.TriggeredRule) {
-	attrs := append(eventAttributes(sessionTrace.id, e), ruleMatchAttributes(snapshot, result, rule)...)
+func (m *Manager) recordRuleMatchEventLocked(sessionTrace *sessionTrace, e event.Event, result decision.Result, rule rules.TriggeredRule) {
+	attrs := append(eventAttributes(sessionTrace.id, e), ruleMatchAttributes(result, rule)...)
 	sessionTrace.span.AddEvent(
 		fmt.Sprintf("rule matched: %s", rule.Name),
 		trace.WithTimestamp(e.Time),
@@ -355,35 +355,15 @@ func eventAttributes(sessionID process.SessionID, e event.Event) []attribute.Key
 	return attrs
 }
 
-func ruleMatchAttributes(snapshot ctxpkg.ContextSnapshot, result decision.Result, rule rules.TriggeredRule) []attribute.KeyValue {
+func ruleMatchAttributes(result decision.Result, rule rules.TriggeredRule) []attribute.KeyValue {
 	attrs := []attribute.KeyValue{
 		attribute.String("casa.rule.name", rule.Name),
 		attribute.String("casa.rule.expr", rule.Expr),
 		attribute.Int("casa.rule.weight", rule.Weight),
-		attribute.Int("casa.rule.triggered_rule_count", len(result.Triggered)),
-		attribute.StringSlice("casa.decision.triggered_rule_names", triggeredRuleNames(result.Triggered)),
 		attribute.Int("casa.decision.score", result.Score),
 		attribute.String("casa.decision.action", string(result.Action)),
 		attribute.Int("casa.decision.log_threshold", result.LogThreshold),
 		attribute.Int("casa.decision.alert_threshold", result.AlertThreshold),
-		attribute.Bool("casa.execution.suspicious_path_exec", snapshot.Execution.SuspiciousPathExec),
-		attribute.Bool("casa.execution.deep_chain", snapshot.Execution.DeepChain),
-		attribute.Bool("casa.execution.shell_in_chain", snapshot.Execution.ShellInChain),
-		attribute.Bool("casa.execution.network_tool_in_chain", snapshot.Execution.NetworkToolInChain),
-		attribute.Bool("casa.execution.interpreter_in_chain", snapshot.Execution.InterpreterInChain),
-		attribute.Bool("casa.execution.container_runtime_in_chain", snapshot.Execution.ContainerRuntimeInChain),
-		attribute.Bool("casa.execution.memfd_or_deleted_exec", snapshot.Execution.MemfdOrDeletedExec),
-		attribute.Bool("casa.capability.has_dangerous_caps", snapshot.Capability.HasDangerousCaps),
-		attribute.Int("casa.capability.dangerous_count", snapshot.Capability.DangerousCount),
-		attribute.Bool("casa.capability.seccomp_disabled", snapshot.Capability.SeccompDisabled),
-		attribute.Bool("casa.history.connect_then_exec", snapshot.History.ConnectThenExec),
-		attribute.Bool("casa.history.sensitive_then_network", snapshot.History.SensitiveThenNetwork),
-		attribute.Bool("casa.history.sensitive_then_execve", snapshot.History.SensitiveThenExecve),
-		attribute.Bool("casa.history.burst_open", snapshot.History.BurstOpen),
-		attribute.Bool("casa.history.burst_connect", snapshot.History.BurstConnect),
-		attribute.Bool("casa.history.burst_exec", snapshot.History.BurstExec),
-		attribute.Bool("casa.history.write_then_exec_same_path", snapshot.History.WriteThenExecSamePath),
-		attribute.Bool("casa.history.opened_deleted_path", snapshot.History.OpenedDeletedPath),
 	}
 	return attrs
 }

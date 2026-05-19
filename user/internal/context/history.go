@@ -193,7 +193,22 @@ func shouldIgnoreBurstOpen(evt ObservedEvent) bool {
 	switch p {
 	case "/dev/null", "/dev/tty", "/dev/urandom", "/etc/localtime", "/usr/lib/locale/locale-archive":
 		return true
-	case "/home/ubuntu/.profile", "/home/ubuntu/.bashrc", "package.json", "package-lock.json":
+	case "/home/ubuntu/.profile",
+		"/home/ubuntu/.bashrc",
+		"/home/ubuntu/.env",
+		"/home/ubuntu/.curlrc",
+		"/home/ubuntu/.config/curlrc",
+		"/etc/nsswitch.conf",
+		"/etc/passwd",
+		"/etc/gnutls/config",
+		"/var/lib/crypto-config/profiles/current/gnutls.conf",
+		"/usr/lib/ssl/openssl.cnf",
+		"package.json",
+		"package-lock.json":
+		return true
+	}
+
+	if strings.Contains(p, "/tmp/openclaw/") {
 		return true
 	}
 

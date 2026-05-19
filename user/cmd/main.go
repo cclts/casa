@@ -39,7 +39,6 @@ type Config struct {
 
 func main() {
 	cfg := loadConfig()
-	log.Printf("telemetry=%s", cfg.Telemetry.Summary())
 
 	ctx, stop := signal.NotifyContext(stdcontext.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
@@ -159,9 +158,7 @@ func main() {
 }
 
 func loadConfig() Config {
-	if err := loadDotEnv(".env"); err != nil {
-		log.Printf("load .env skipped: %v", err)
-	}
+	_ = loadDotEnv(".env")
 
 	return Config{
 		EventLogPath:   getenvFirst([]string{"CASA_EVENTS_LOG_PATH", "CASA_EVENTS_LOG"}, "user/logs/events.log"),

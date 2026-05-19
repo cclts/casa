@@ -15,7 +15,16 @@ func TestShouldIngestIntoContextFiltersRuntimeNoise(t *testing.T) {
 		{Type: event.EventOpenat, Path: "/home/ubuntu/.nvm/versions/node/v24.14.1/bin/node"},
 		{Type: event.EventOpenat, Path: "/home/ubuntu/.openclaw/agents/main/sessions/foo.json"},
 		{Type: event.EventOpenat, Path: "/home/ubuntu/.bashrc"},
+		{Type: event.EventOpenat, Path: "/home/ubuntu/.env"},
+		{Type: event.EventOpenat, Path: "/home/ubuntu/.curlrc"},
+		{Type: event.EventOpenat, Path: "/home/ubuntu/.config/curlrc"},
 		{Type: event.EventOpenat, Path: "/etc/hosts"},
+		{Type: event.EventOpenat, Path: "/etc/nsswitch.conf"},
+		{Type: event.EventOpenat, Path: "/etc/passwd"},
+		{Type: event.EventOpenat, Path: "/etc/gnutls/config"},
+		{Type: event.EventOpenat, Path: "/var/lib/crypto-config/profiles/current/gnutls.conf"},
+		{Type: event.EventOpenat, Path: "/usr/lib/ssl/openssl.cnf"},
+		{Type: event.EventOpenat, Path: "/tmp/openclaw/openclaw-2026-05-19.log"},
 	}
 
 	for _, evt := range cases {

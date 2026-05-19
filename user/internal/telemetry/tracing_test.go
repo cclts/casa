@@ -108,7 +108,7 @@ func TestTriggeredRuleNamesAndRuleMatchAttributes(t *testing.T) {
 		t.Fatalf("unexpected triggeredRuleNames: %#v", names)
 	}
 
-	attrs := ruleMatchAttributes(snapshot, result, result.Triggered[0])
+	attrs := ruleMatchAttributes(result, result.Triggered[0])
 	if len(attrs) == 0 {
 		t.Fatalf("expected ruleMatchAttributes to include telemetry fields")
 	}

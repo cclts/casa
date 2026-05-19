@@ -29,9 +29,11 @@ func Run(ctx stdcontext.Context, events <-chan event.Event, decisionEngine *deci
 	sessionTracker := process.NewSessionTracker()
 	securityStore := process.NewSecurityStore()
 	contextManager := context.NewManager()
+	pendingShells := newPendingShellWrappers()
 	sessionTracker.StartJanitor(ctx, 500*time.Millisecond, func(id process.SessionID, closedAt time.Time) {
 		traceManager.CloseSession(id, closedAt)
 		contextManager.CloseSession(id, closedAt)
+		pendingShells.ClearSession(id)
 		rawSession, ok := contextManager.SnapshotSessionByID(id)
 		if !ok {
 			decisionEngine.CloseSession(uint32(id))
@@ -75,7 +77,21 @@ func Run(ctx stdcontext.Context, events <-chan event.Event, decisionEngine *deci
 			continue
 		}
 
+		if pendingShells.PromoteIfMeaningful(sess.ID, e, tracker) {
+			// The shell has now shown security-relevant behavior. Keep later events
+			// visible, but do not synthesize its placeholder execve into context.
+		}
+
+		if isPendingShellExecve(e) {
+			pendingShells.Add(sess.ID, e)
+			tracker.SetTransparent(e.PID, true)
+			continue
+		}
+
 		if shouldIgnoreSecurityPipelineEvent(e, sess.ID, contextManager, tracker, providerClassifier) {
+			if e.Type == event.EventExit && e.PID == e.TID {
+				pendingShells.Remove(sess.ID, e.PID)
+			}
 			if e.Type == event.EventExit && e.PID == e.TID {
 				tracker.Remove(e.PID)
 			}
@@ -84,9 +100,6 @@ func Run(ctx stdcontext.Context, events <-chan event.Event, decisionEngine *deci
 
 		var lineage process.Lineage
 		if e.Type == event.EventExecve {
-			if !isTransparentRoutineExec(e) && contextManager.PruneTransparentShellWrapper(sess.ID, e.PPID) {
-				tracker.SetTransparent(e.PPID, true)
-			}
 			securityStore.Ensure(e.PID)
 			lineage = process.BuildLineage(e.PID, tracker, decisionEngine.LineageMaxDepth())
 		}
@@ -111,6 +124,7 @@ func Run(ctx stdcontext.Context, events <-chan event.Event, decisionEngine *deci
 		}
 
 		if e.Type == event.EventExit && e.PID == e.TID {
+			pendingShells.Remove(sess.ID, e.PID)
 			tracker.Remove(e.PID)
 		}
 	}

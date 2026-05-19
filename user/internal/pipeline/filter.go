@@ -93,9 +93,18 @@ func isRoutineSessionFileNoise(e event.Event) bool {
 	switch {
 	case strings.HasSuffix(p, "/package.json"),
 		strings.HasSuffix(p, "/package-lock.json"),
+		strings.HasSuffix(p, "/.env"),
+		strings.HasSuffix(p, "/.curlrc"),
+		strings.HasSuffix(p, "/.config/curlrc"),
 		strings.HasSuffix(p, "/etc/hosts"),
+		strings.HasSuffix(p, "/etc/nsswitch.conf"),
+		strings.HasSuffix(p, "/etc/passwd"),
+		strings.HasSuffix(p, "/etc/gnutls/config"),
+		strings.HasSuffix(p, "/var/lib/crypto-config/profiles/current/gnutls.conf"),
+		strings.HasSuffix(p, "/usr/lib/ssl/openssl.cnf"),
 		strings.HasSuffix(p, "/.bashrc"),
 		strings.HasSuffix(p, "/.profile"),
+		strings.Contains(p, "/tmp/openclaw/"),
 		strings.Contains(p, "/gconv/gconv-modules.cache"),
 		strings.Contains(p, "/etc/bash.bashrc"):
 		return true

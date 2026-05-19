@@ -268,6 +268,17 @@ func TestDetectBurstEventForOpenHonorsIgnoreList(t *testing.T) {
 
 	sessState = SessionSnapshot{
 		RecentEvents: []ObservedEvent{
+			{Type: event.EventOpenat, Path: "/home/ubuntu/.curlrc", Time: now},
+			{Type: event.EventOpenat, Path: "/etc/nsswitch.conf", Time: now.Add(200 * time.Millisecond)},
+			{Type: event.EventOpenat, Path: "/usr/lib/ssl/openssl.cnf", Time: now.Add(400 * time.Millisecond)},
+		},
+	}
+	if detectBurstEvent(sessState, event.EventOpenat, 3) {
+		t.Fatalf("expected ignored curl/runtime config opens not to trigger burst_open")
+	}
+
+	sessState = SessionSnapshot{
+		RecentEvents: []ObservedEvent{
 			{Type: event.EventOpenat, Path: "/tmp/a", Time: now},
 			{Type: event.EventOpenat, Path: "/tmp/b", Time: now.Add(200 * time.Millisecond)},
 			{Type: event.EventOpenat, Path: "/tmp/c", Time: now.Add(400 * time.Millisecond)},
