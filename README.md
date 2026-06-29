@@ -1,7 +1,7 @@
-# CASA: A Context-Aware Security Pipeline for Personal AI Agents
+# CASA: A Context-Aware Runtime Security Monitor for AI Agents
 
-CASA monitors AI agent runtime behavior at the OS level, using eBPF to
-capture system events, grouping them into sessions, and evaluating
+CASA is a context-aware runtime security monitor for AI agents. It uses
+eBPF to capture OS-level events, groups them into sessions, and evaluates
 weighted rules over derived context to detect multi-step attack patterns
 such as connect→exec and write→exec.
 
